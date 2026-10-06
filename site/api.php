@@ -109,11 +109,9 @@ $routes = [
     'devreqs/review' => [['POST'], 'devreqs.php', 'qly_api_devreqs_review'],
     'devreqs/claim' => [['POST'], 'devreqs.php', 'qly_api_devreqs_claim'],
     'devreqs/design' => [['POST'], 'devreqs.php', 'qly_api_devreqs_design'],
+    'devreqs/devdone' => [['POST'], 'devreqs.php', 'qly_api_devreqs_devdone'],
     'devreqs/release' => [['POST'], 'devreqs.php', 'qly_api_devreqs_release'],
     'devreqs/devs' => [['GET'], 'devreqs.php', 'qly_api_devreqs_devs'],
-    'subtasks/create' => [['POST'], 'devreqs.php', 'qly_api_subtasks_create'],
-    'subtasks/start' => [['POST'], 'devreqs.php', 'qly_api_subtasks_start'],
-    'subtasks/done' => [['POST'], 'devreqs.php', 'qly_api_subtasks_done'],
 ];
 
 if (!isset($routes[$route])) {

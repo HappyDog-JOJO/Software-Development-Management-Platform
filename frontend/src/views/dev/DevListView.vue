@@ -11,7 +11,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useDictStore } from '@/stores/dict'
 import { fetchDevRequests } from '@/api/devreq'
-import { DEV_PRIORITY_CLASS, DEV_PRIORITY_OPTIONS, DEV_STATUS_CLASS, DEV_STATUS_OPTIONS, SUB_TASK_CLASS } from '@/constants/devreq'
+import { DEV_PRIORITY_CLASS, DEV_PRIORITY_OPTIONS, DEV_STATUS_CLASS, DEV_STATUS_OPTIONS } from '@/constants/devreq'
 import DevRequestActions from '@/components/DevRequestActions.vue'
 import EmptyIllustration from '@/components/illustrations/EmptyIllustration.vue'
 import { fmtDateTime } from '@/utils/format'
@@ -40,7 +40,7 @@ const stageDesc = computed(() => {
     case '设计中心':
       return '产品经理上传设计文档、指定开发分支与开发负责人。'
     case '开发中心':
-      return '开发负责人拆解子任务组织开发；全部子任务完成后自动进入待发布。'
+      return '开发负责人按分支完成开发，提交开发完成后进入待发布。'
     case '待发布':
       return '开发完成的需求在此等待发布；评审委员执行发布后正式上线。'
     default:
@@ -312,14 +312,6 @@ watch(
             <template #default="{ row }">
               <div class="cell-stack">
                 <span class="cell-nowrap">{{ ownerLabel(row) }}</span>
-                <span
-                  v-if="row.status === '开发中心' && row.subTotal > 0"
-                  class="cell-stack__sub"
-                >子任务
-                  <span :class="row.subDone === row.subTotal ? SUB_TASK_CLASS['已完成'] : SUB_TASK_CLASS['开发中']">
-                    {{ row.subDone }}/{{ row.subTotal }}
-                  </span>
-                </span>
               </div>
             </template>
           </el-table-column>

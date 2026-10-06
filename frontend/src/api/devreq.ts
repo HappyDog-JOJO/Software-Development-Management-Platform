@@ -1,12 +1,10 @@
 import { http } from './request'
 import type {
   Attachment,
-  DevAttachment,
   DevCandidate,
   DevQuery,
   DevRequest,
   DevRequestDetail,
-  DevSubTask,
   PageResult,
   UploadResult,
 } from '@/types'
@@ -70,38 +68,23 @@ export function designDevRequest(id: number, payload: DesignPayload): Promise<nu
   return http.post<null>('/api.php?r=devreqs/design', { id, ...payload })
 }
 
+/** 开发完成提交（开发负责人/管理员）：开发中心 → 待发布 */
+export function devDoneDevRequest(
+  id: number,
+  doneNote: string,
+  attachments: DevAttachmentPayload[] = [],
+): Promise<null> {
+  return http.post<null>('/api.php?r=devreqs/devdone', { id, doneNote, attachments })
+}
+
 /** 发布上线（评审委员/管理员）：待发布 → 已上线 */
 export function releaseDevRequest(id: number, comment = ''): Promise<null> {
   return http.post<null>('/api.php?r=devreqs/release', { id, comment })
 }
 
-/** 开发工程师候选（指定开发负责人/子任务负责人） */
+/** 开发工程师候选（指定开发负责人） */
 export function fetchDevCandidates(): Promise<DevCandidate[]> {
   return http.get<DevCandidate[]>('/api.php?r=devreqs/devs')
-}
-
-/** 创建子任务（开发负责人；分支自动继承主任务） */
-export function createSubTask(payload: {
-  requestId: number
-  title: string
-  description?: string
-  assigneeId: number
-}): Promise<{ id: number; subCount: number }> {
-  return http.post<{ id: number; subCount: number }>('/api.php?r=subtasks/create', payload)
-}
-
-/** 子任务开工（待开发/需返工 → 开发中） */
-export function startSubTask(id: number): Promise<null> {
-  return http.post<null>('/api.php?r=subtasks/start', { id })
-}
-
-/** 子任务提交完成（全部完成时父任务自动进待发布） */
-export function doneSubTask(
-  id: number,
-  doneNote: string,
-  attachments: DevAttachmentPayload[] = [],
-): Promise<{ done: number; total: number }> {
-  return http.post<{ done: number; total: number }>('/api.php?r=subtasks/done', { id, doneNote, attachments })
 }
 
 export type { Attachment, UploadResult }

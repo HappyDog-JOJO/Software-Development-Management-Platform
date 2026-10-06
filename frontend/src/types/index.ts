@@ -48,9 +48,6 @@ export type DevStatus =
 /** 需求优先级（四级） */
 export type DevPriority = '紧急' | '高' | '中' | '低'
 
-/** 开发子任务状态 */
-export type SubTaskStatus = '待开发' | '开发中' | '已完成' | '需返工'
-
 /** 统一响应体 */
 export interface ApiResponse<T> {
   code: number
@@ -399,32 +396,14 @@ export interface DutyToday {
 
 /* ==================== 需求管理模块 ==================== */
 
-/** 需求/子任务附件（scene：submit提交/design设计/reject驳回/done完成/release上线） */
+/** 需求附件（scene：submit提交/design设计/reject驳回/done完成/release上线） */
 export interface DevAttachment extends Attachment {
   requestId: number
-  subTaskId: number | null
   scene: 'submit' | 'design' | 'reject' | 'done' | 'release' | string
   createdAt: string
 }
 
-/** 开发子任务（开发分支继承主任务） */
-export interface DevSubTask {
-  id: number
-  requestId: number
-  title: string
-  description: string | null
-  assigneeId: number
-  assigneeName: string
-  branch: string | null
-  status: SubTaskStatus
-  doneNote: string | null
-  doneAt: string | null
-  createdAt: string
-  updatedAt: string
-  attachments: DevAttachment[]
-}
-
-/** 需求主任务（列表/详情共用，详情多出 subTasks/attachments/logs） */
+/** 需求主任务（列表/详情共用，详情多出 attachments/logs） */
 export interface DevRequest {
   id: number
   reqNo: string
@@ -448,6 +427,8 @@ export interface DevRequest {
   devLeaderId: number | null
   devLeaderName: string | null
   designedAt: string | null
+  devDoneNote: string | null
+  devDoneAt: string | null
   inspectorName: string | null
   inspectResult: '通过' | '驳回' | null
   inspectComment: string | null
@@ -460,8 +441,6 @@ export interface DevRequest {
   battleAt: string | null
   inspectAt: string | null
   frontlineAt: string | null
-  subTotal: number
-  subDone: number
   createdAt: string
   updatedAt: string
 }
@@ -476,7 +455,6 @@ export interface DevReqLogItem {
 }
 
 export interface DevRequestDetail extends DevRequest {
-  subTasks: DevSubTask[]
   attachments: DevAttachment[]
   logs: DevReqLogItem[]
 }
@@ -494,7 +472,7 @@ export interface DevQuery {
   sortOrder?: 'ASC' | 'DESC'
 }
 
-/** 开发工程师候选（指定开发负责人/子任务负责人） */
+/** 开发工程师候选（指定开发负责人） */
 export interface DevCandidate {
   id: number
   account: string

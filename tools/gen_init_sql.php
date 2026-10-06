@@ -319,6 +319,8 @@ CREATE TABLE IF NOT EXISTS `dev_request` (
   `dev_leader_id` INT UNSIGNED DEFAULT NULL COMMENT '开发负责人ID',
   `dev_leader_name` VARCHAR(60) DEFAULT NULL COMMENT '开发负责人姓名',
   `designed_at` DATETIME DEFAULT NULL COMMENT '设计完成时间（进入开发中心）',
+  `dev_done_note` VARCHAR(1000) DEFAULT NULL COMMENT '开发完成说明（提交开发完成时填写）',
+  `dev_done_at` DATETIME DEFAULT NULL COMMENT '开发完成时间（提交开发完成）',
   `inspector_id` INT UNSIGNED DEFAULT NULL COMMENT '废弃（质量中心已下线，仅保留历史数据）',
   `inspector_name` VARCHAR(60) DEFAULT NULL COMMENT '废弃（质量中心已下线，仅保留历史数据）',
   `inspect_result` VARCHAR(10) DEFAULT NULL COMMENT '废弃（质量中心已下线，仅保留历史数据）',
@@ -343,31 +345,10 @@ CREATE TABLE IF NOT EXISTS `dev_request` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='需求主任务';
 SQL;
 
-$ddl['dev_sub_task'] = <<<'SQL'
-CREATE TABLE IF NOT EXISTS `dev_sub_task` (
-  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
-  `request_id` INT UNSIGNED NOT NULL COMMENT '所属需求ID',
-  `title` VARCHAR(100) NOT NULL COMMENT '子任务标题',
-  `description` TEXT COMMENT '子任务说明',
-  `assignee_id` INT UNSIGNED NOT NULL COMMENT '负责人ID（开发工程师）',
-  `assignee_name` VARCHAR(60) NOT NULL COMMENT '负责人姓名',
-  `branch` VARCHAR(100) DEFAULT NULL COMMENT '开发分支（创建时继承主任务快照）',
-  `status` VARCHAR(20) NOT NULL DEFAULT '待开发' COMMENT '状态：待开发/开发中/已完成/需返工',
-  `done_note` VARCHAR(1000) DEFAULT NULL COMMENT '完成说明（最近一次）',
-  `done_at` DATETIME DEFAULT NULL COMMENT '最近完成时间',
-  `created_at` DATETIME NOT NULL COMMENT '创建时间',
-  `updated_at` DATETIME DEFAULT NULL COMMENT '最近更新时间',
-  PRIMARY KEY (`id`),
-  KEY `idx_sub_request` (`request_id`),
-  KEY `idx_sub_assignee` (`assignee_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='开发子任务';
-SQL;
-
 $ddl['dev_request_attachment'] = <<<'SQL'
 CREATE TABLE IF NOT EXISTS `dev_request_attachment` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
   `request_id` INT UNSIGNED NOT NULL COMMENT '需求ID',
-  `sub_task_id` INT UNSIGNED DEFAULT NULL COMMENT '子任务ID（NULL=需求级）',
   `scene` VARCHAR(20) NOT NULL DEFAULT 'submit' COMMENT '场景：submit提交/design设计/reject驳回/done完成/release上线',
   `url` VARCHAR(255) NOT NULL COMMENT '文件地址',
   `name` VARCHAR(255) NOT NULL DEFAULT '' COMMENT '文件名',
@@ -376,12 +357,11 @@ CREATE TABLE IF NOT EXISTS `dev_request_attachment` (
   `uploader_id` INT UNSIGNED DEFAULT NULL COMMENT '上传人',
   `created_at` DATETIME NOT NULL COMMENT '上传时间',
   PRIMARY KEY (`id`),
-  KEY `idx_da_request` (`request_id`),
-  KEY `idx_da_sub` (`sub_task_id`)
+  KEY `idx_da_request` (`request_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='需求附件';
 SQL;
 
-foreach (['department', 'user', 'user_token', 'dict_item', 'issue', 'issue_attachment', 'issue_append', 'handle_record', 'handle_attachment', 'duty_schedule', 'notice', 'operation_log', 'notification', 'site_config', 'dev_request', 'dev_sub_task', 'dev_request_attachment'] as $t) {
+foreach (['department', 'user', 'user_token', 'dict_item', 'issue', 'issue_attachment', 'issue_append', 'handle_record', 'handle_attachment', 'duty_schedule', 'notice', 'operation_log', 'notification', 'site_config', 'dev_request', 'dev_request_attachment'] as $t) {
     $sql[] = '-- 表：' . $t;
     $sql[] = $ddl[$t];
     $sql[] = '';
@@ -415,19 +395,15 @@ $sql[] = 'INSERT INTO `user` (`id`,`account`,`password_hash`,`name`,`phone`,`dep
     . ' ON DUPLICATE KEY UPDATE `name`=VALUES(`name`),`roles`=VALUES(`roles`),`status`=VALUES(`status`),`must_change_password`=VALUES(`must_change_password`);';
 $sql[] = '';
 $sql[] = '-- 需求管理模块样例需求（各环节一条；module_id 留空，仅写模块名称快照，避免依赖字典种子）';
-$sql[] = 'INSERT INTO `dev_request` (`id`,`req_no`,`title`,`description`,`module_id`,`module_name`,`priority`,`status`,`submitter_id`,`submitter_account`,`submitter_name`,`reviewer_id`,`reviewer_name`,`review_comment`,`reviewed_at`,`pm_id`,`pm_name`,`design_doc`,`branch`,`dev_leader_id`,`dev_leader_name`,`designed_at`,`inspector_id`,`inspector_name`,`inspect_result`,`inspect_comment`,`inspected_at`,`reject_count`,`released_at`,`released_by`,`pool_at`,`design_at`,`battle_at`,`inspect_at`,`frontline_at`,`created_at`,`updated_at`) VALUES'
-    . ' (9001,\'XQDEMO01\',\'客户对账单导出增加筛选条件\',\'销售导出对账单时希望按时间范围与客户名称筛选，减少手工整理工作量。\',NULL,\'综合\',\'紧急\',\'评审池\',1,\'商辂\',\'商辂\',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,\'2026-10-06 09:10:00\',NULL),'
-    . ' (9002,\'XQDEMO02\',\'售后报表支持按部门导出\',\'管理员希望把售后报表按部门拆分导出，方便月度经营分析会直接使用。\',NULL,\'报表\',\'高\',\'需求池\',1,\'商辂\',\'商辂\',901,\'评审委员甲\',\'需求明确，价值清晰，通过。\',\'2026-10-06 09:20:00\',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,\'2026-10-06 09:20:00\',NULL,NULL,NULL,NULL,\'2026-10-06 09:15:00\',\'2026-10-06 09:20:00\'),'
-    . ' (9003,\'XQDEMO03\',\'值班排班支持批量周轮值\',\'售后排班目前逐日点击，希望支持按周批量轮值并跳过周末，减轻管理员负担。\',NULL,\'排班\',\'高\',\'开发中心\',1,\'商辂\',\'商辂\',901,\'评审委员甲\',\'演示样例：通过。\',\'2026-10-06 09:30:00\',902,\'产品小王\',\'排班批量生成采用周为单位循环轮值，前端日历直接标出预览，确认后一次性写入；接口复用 duty/batch。\',\'feature/batch-duty\',903,\'开发老张\',\'2026-10-06 10:00:00\',NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,\'2026-10-06 09:30:00\',\'2026-10-06 09:40:00\',\'2026-10-06 10:00:00\',NULL,NULL,\'2026-10-06 09:25:00\',\'2026-10-06 10:00:00\'),'
-    . ' (9004,\'XQDEMO04\',\'登录页品牌视觉升级\',\'登录页沿用旧品牌名，需要统一升级平台视觉与文案。\',NULL,\'综合\',\'中\',\'待发布\',1,\'商辂\',\'商辂\',901,\'评审委员甲\',\'演示样例：通过。\',\'2026-10-06 10:10:00\',902,\'产品小王\',\'沿用夜色星空插画，仅替换品牌文案与副标题。\',\'feature/brand-2026q4\',904,\'开发小李\',\'2026-10-06 10:30:00\',NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,\'2026-10-06 10:10:00\',\'2026-10-06 10:20:00\',\'2026-10-06 10:30:00\',NULL,\'2026-10-06 11:00:00\',\'2026-10-06 10:05:00\',\'2026-10-06 11:00:00\'),'
-    . ' (9005,\'XQDEMO05\',\'消息通知支持点击跳转\',\'站内消息点击后直达对应页面，减少查找步骤。\',NULL,\'综合\',\'中\',\'已上线\',1,\'商辂\',\'商辂\',901,\'评审委员甲\',\'演示样例：通过。\',\'2026-10-06 08:10:00\',902,\'产品小王\',\'消息体携带前端路由，轮询弹窗与列表点击均跳转。\',\'feature/notify-link\',903,\'开发老张\',\'2026-10-06 08:30:00\',NULL,NULL,NULL,NULL,NULL,0,\'2026-10-06 09:00:00\',\'商辂\',\'2026-10-06 08:10:00\',\'2026-10-06 08:20:00\',\'2026-10-06 08:30:00\',NULL,\'2026-10-06 08:55:00\',\'2026-10-06 08:05:00\',\'2026-10-06 09:00:00\')'
+$sql[] = 'INSERT INTO `dev_request` (`id`,`req_no`,`title`,`description`,`module_id`,`module_name`,`priority`,`status`,`submitter_id`,`submitter_account`,`submitter_name`,`reviewer_id`,`reviewer_name`,`review_comment`,`reviewed_at`,`pm_id`,`pm_name`,`design_doc`,`branch`,`dev_leader_id`,`dev_leader_name`,`designed_at`,`dev_done_note`,`dev_done_at`,`inspector_id`,`inspector_name`,`inspect_result`,`inspect_comment`,`inspected_at`,`reject_count`,`released_at`,`released_by`,`pool_at`,`design_at`,`battle_at`,`inspect_at`,`frontline_at`,`created_at`,`updated_at`) VALUES'
+    . ' (9001,\'XQDEMO01\',\'客户对账单导出增加筛选条件\',\'销售导出对账单时希望按时间范围与客户名称筛选，减少手工整理工作量。\',NULL,\'综合\',\'紧急\',\'评审池\',1,\'商辂\',\'商辂\',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,\'2026-10-06 09:10:00\',NULL),'
+    . ' (9002,\'XQDEMO02\',\'售后报表支持按部门导出\',\'管理员希望把售后报表按部门拆分导出，方便月度经营分析会直接使用。\',NULL,\'报表\',\'高\',\'需求池\',1,\'商辂\',\'商辂\',901,\'评审委员甲\',\'需求明确，价值清晰，通过。\',\'2026-10-06 09:20:00\',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,\'2026-10-06 09:20:00\',NULL,NULL,NULL,NULL,\'2026-10-06 09:15:00\',\'2026-10-06 09:20:00\'),'
+    . ' (9003,\'XQDEMO03\',\'值班排班支持批量周轮值\',\'售后排班目前逐日点击，希望支持按周批量轮值并跳过周末，减轻管理员负担。\',NULL,\'排班\',\'高\',\'开发中心\',1,\'商辂\',\'商辂\',901,\'评审委员甲\',\'演示样例：通过。\',\'2026-10-06 09:30:00\',902,\'产品小王\',\'排班批量生成采用周为单位循环轮值，前端日历直接标出预览，确认后一次性写入；接口复用 duty/batch。\',\'feature/batch-duty\',903,\'开发老张\',\'2026-10-06 10:00:00\',NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,\'2026-10-06 09:30:00\',\'2026-10-06 09:40:00\',\'2026-10-06 10:00:00\',NULL,NULL,\'2026-10-06 09:25:00\',\'2026-10-06 10:00:00\'),'
+    . ' (9004,\'XQDEMO04\',\'登录页品牌视觉升级\',\'登录页沿用旧品牌名，需要统一升级平台视觉与文案。\',NULL,\'综合\',\'中\',\'待发布\',1,\'商辂\',\'商辂\',901,\'评审委员甲\',\'演示样例：通过。\',\'2026-10-06 10:10:00\',902,\'产品小王\',\'沿用夜色星空插画，仅替换品牌文案与副标题。\',\'feature/brand-2026q4\',904,\'开发小李\',\'2026-10-06 10:30:00\',\'品牌文案与副标题替换完成，登录页两处入口已回归验证。\',\'2026-10-06 11:00:00\',NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,\'2026-10-06 10:10:00\',\'2026-10-06 10:20:00\',\'2026-10-06 10:30:00\',NULL,\'2026-10-06 11:00:00\',\'2026-10-06 10:05:00\',\'2026-10-06 11:00:00\'),'
+    . ' (9005,\'XQDEMO05\',\'消息通知支持点击跳转\',\'站内消息点击后直达对应页面，减少查找步骤。\',NULL,\'综合\',\'中\',\'已上线\',1,\'商辂\',\'商辂\',901,\'评审委员甲\',\'演示样例：通过。\',\'2026-10-06 08:10:00\',902,\'产品小王\',\'消息体携带前端路由，轮询弹窗与列表点击均跳转。\',\'feature/notify-link\',903,\'开发老张\',\'2026-10-06 08:30:00\',\'消息跳转逻辑完成，站内信列表与弹窗点击均回归通过。\',\'2026-10-06 08:55:00\',NULL,NULL,NULL,NULL,NULL,0,\'2026-10-06 09:00:00\',\'商辂\',\'2026-10-06 08:10:00\',\'2026-10-06 08:20:00\',\'2026-10-06 08:30:00\',NULL,\'2026-10-06 08:55:00\',\'2026-10-06 08:05:00\',\'2026-10-06 09:00:00\')'
     . ' ON DUPLICATE KEY UPDATE `title`=VALUES(`title`),`description`=VALUES(`description`),`priority`=VALUES(`priority`),`status`=VALUES(`status`),`updated_at`=VALUES(`updated_at`);';
 $sql[] = '';
-$sql[] = '-- 样例需求 9003 的两个子任务（分支继承主任务）';
-$sql[] = 'INSERT INTO `dev_sub_task` (`id`,`request_id`,`title`,`description`,`assignee_id`,`assignee_name`,`branch`,`status`,`done_note`,`done_at`,`created_at`,`updated_at`) VALUES'
-    . ' (9001,9003,\'批量排班接口开发\',\'duty/batch 支持周轮值与跳过周末参数。\',903,\'开发老张\',\'feature/batch-duty\',\'已完成\',\'接口已完成并自测通过。\',\'2026-10-06 10:40:00\',\'2026-10-06 10:10:00\',\'2026-10-06 10:40:00\'),'
-    . ' (9002,9003,\'日历批量预览交互\',\'排班页日历上预览批量结果并二次确认。\',904,\'开发小李\',\'feature/batch-duty\',\'待开发\',NULL,NULL,\'2026-10-06 10:12:00\',\'2026-10-06 10:12:00\')'
-    . ' ON DUPLICATE KEY UPDATE `title`=VALUES(`title`),`status`=VALUES(`status`),`updated_at`=VALUES(`updated_at`);';
+
 $sql[] = '';
 $sql[] = 'COMMIT;';
 $sql[] = '';

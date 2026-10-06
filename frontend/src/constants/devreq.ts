@@ -1,6 +1,6 @@
 /** 需求管理模块 · 需求状态/优先级语义（颜色只在 token 层派生） */
 
-import type { DevPriority, DevStatus, SubTaskStatus } from '@/types'
+import type { DevPriority, DevStatus } from '@/types'
 
 /** 主流程六站（时间线顺序；已驳回/已取消为分支终态） */
 export const DEV_STAGES: DevStatus[] = ['评审池', '需求池', '设计中心', '开发中心', '待发布', '已上线']
@@ -27,14 +27,6 @@ export const DEV_STATUS_CLASS: Record<DevStatus, string> = {
   已上线: 'pill pill--green',
   已驳回: 'pill pill--red',
   已取消: 'pill pill--grey',
-}
-
-/** 子任务状态 → pill 样式类 */
-export const SUB_TASK_CLASS: Record<SubTaskStatus, string> = {
-  待开发: 'pill pill--grey',
-  开发中: 'pill pill--yellow',
-  已完成: 'pill pill--green',
-  需返工: 'pill pill--red',
 }
 
 /** 优先级 → pill 样式类（紧急红 / 高橙 / 中蓝 / 低灰，对齐方案语义色） */

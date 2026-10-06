@@ -336,15 +336,9 @@ function qly_can_design_req(array $user): bool
     return qly_has_role($user, [QLY_ROLE_PM, QLY_ROLE_ADMIN]);
 }
 
-/** 开发作战：开发工程师 / 管理员 */
-function qly_can_dev_req(array $user): bool
-{
-    return qly_has_role($user, [QLY_ROLE_DEV, QLY_ROLE_ADMIN]);
-}
-
 /** 需求单条可见范围（与 qly_devreq_scope_where 保持同源）：
  * 评审委员/管理员全量；产品经理可见需求池全部 + 自己认领的；
- * 开发工程师可见自己负责的主任务/子任务；提交人可见自己的。 */
+ * 开发工程师可见自己负责的主任务；提交人可见自己的。 */
 function qly_devreq_visible(array $user, array $r): bool
 {
     $roles = qly_parse_roles(isset($user['roles']) ? (string) $user['roles'] : null);
@@ -368,15 +362,6 @@ function qly_devreq_visible(array $user, array $r): bool
     if ((string) ($r['status'] ?? '') === '已上线') {
         return true;
     }
-    if ($uid > 0) {
-        $n = qly_val(
-            'SELECT COUNT(*) FROM `dev_sub_task` WHERE request_id = :rid AND assignee_id = :uid',
-            [':rid' => (int) ($r['id'] ?? 0), ':uid' => $uid]
-        );
-        if ((int) $n > 0) {
-            return true;
-        }
-    }
     return false;
 }
 
@@ -394,7 +379,6 @@ function qly_devreq_scope_where(array $user, string $alias = 'i'): array
         "{$alias}.submitter_id = :__dv_u1",
         "{$alias}.pm_id = :__dv_u2",
         "{$alias}.dev_leader_id = :__dv_u3",
-        "EXISTS (SELECT 1 FROM `dev_sub_task` __s WHERE __s.request_id = {$alias}.id AND __s.assignee_id = :__dv_u4)",
     ];
     if ($isPm) {
         $conds[] = "{$alias}.status = '需求池'";
@@ -402,5 +386,5 @@ function qly_devreq_scope_where(array $user, string $alias = 'i'): array
     // 已上线的成果（已上线）对全员可见
     $conds[] = "{$alias}.status = '已上线'";
     $where = ' AND (' . implode(' OR ', $conds) . ')';
-    return [$where, [':__dv_u1' => $uid, ':__dv_u2' => $uid, ':__dv_u3' => $uid, ':__dv_u4' => $uid]];
+    return [$where, [':__dv_u1' => $uid, ':__dv_u2' => $uid, ':__dv_u3' => $uid]];
 }

@@ -2,7 +2,7 @@
 /**
  * 需求操作组件：按「角色 + 需求状态」动态渲染操作按钮与弹窗。
  * 列表页与详情页共用；操作成功后 emit('refresh') 让父级重新拉数据。
- * 覆盖动作：评审通过/驳回（驳回即作废）、取消、认领、提交设计、发布上线。
+ * 覆盖动作：评审通过/驳回（驳回即作废）、取消、认领、提交设计、提交开发完成、发布上线。
  */
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -11,6 +11,7 @@ import {
   cancelDevRequest,
   claimDevRequest,
   designDevRequest,
+  devDoneDevRequest,
   fetchDevCandidates,
   releaseDevRequest,
   reviewDevRequest,
@@ -27,6 +28,9 @@ const auth = useAuthStore()
 
 const admin = computed(() => isAdmin(auth.user?.roles))
 const isClaimer = computed(() => props.req.pmId !== null && props.req.pmId === auth.user?.id)
+const isDevLeader = computed(
+  () => props.req.devLeaderId !== null && props.req.devLeaderId === auth.user?.id,
+)
 
 /* —— 按钮显隐 —— */
 const showReview = computed(
@@ -41,6 +45,9 @@ const showDesign = computed(
     canDesignReq(auth.user?.roles) &&
     (admin.value || isClaimer.value),
 )
+const showDevDone = computed(
+  () => props.req.status === '开发中心' && (admin.value || isDevLeader.value),
+)
 const showRelease = computed(
   () => props.req.status === '待发布' && canReviewReq(auth.user?.roles),
 )
@@ -54,6 +61,7 @@ const hasActions = computed(
     showReview.value ||
     showClaim.value ||
     showDesign.value ||
+    showDevDone.value ||
     showRelease.value ||
     showCancel.value,
 )
@@ -128,8 +136,8 @@ async function onCancel(): Promise<void> {
 /* —— 弹窗通用 —— */
 const dialogVisible = ref(false)
 const submitting = ref(false)
-/** 当前打开的弹窗：驳回 / 提交设计 */
-const dialogKind = ref<'reject' | 'design'>('reject')
+/** 当前打开的弹窗：驳回 / 提交设计 / 提交开发完成 */
+const dialogKind = ref<'reject' | 'design' | 'devdone'>('reject')
 const toPayload = (list: Attachment[]): DevAttachmentPayload[] =>
   list.map((a) => ({ url: a.url, name: a.name, size: a.size, mimeType: a.mimeType }))
 
@@ -147,8 +155,10 @@ function openReject(): void {
 function onDialogSubmit(): void {
   if (dialogKind.value === 'reject') {
     void onRejectSubmit()
-  } else {
+  } else if (dialogKind.value === 'design') {
     void onDesignSubmit()
+  } else {
+    void onDevDoneSubmit()
   }
 }
 
@@ -164,6 +174,32 @@ async function onRejectSubmit(): Promise<void> {
       attachments: toPayload(rejectForm.attachments),
     })
     ElMessage.success('已驳回，该需求已作废')
+    dialogVisible.value = false
+    emit('refresh')
+  } finally {
+    submitting.value = false
+  }
+}
+
+/* —— 提交开发完成（开发中心 → 待发布） —— */
+const devDoneForm = reactive({ doneNote: '', attachments: [] as Attachment[] })
+
+function openDevDone(): void {
+  devDoneForm.doneNote = ''
+  devDoneForm.attachments = []
+  dialogKind.value = 'devdone'
+  dialogVisible.value = true
+}
+
+async function onDevDoneSubmit(): Promise<void> {
+  if (devDoneForm.doneNote.trim().length < 5) {
+    ElMessage.warning('完成说明至少 5 个字')
+    return
+  }
+  submitting.value = true
+  try {
+    await devDoneDevRequest(props.req.id, devDoneForm.doneNote.trim(), toPayload(devDoneForm.attachments))
+    ElMessage.success('开发完成已提交，需求进入待发布')
     dialogVisible.value = false
     emit('refresh')
   } finally {
@@ -240,6 +276,9 @@ async function onDesignSubmit(): Promise<void> {
     <!-- 设计中心 -->
     <el-button v-if="showDesign" size="small" type="primary" @click="openDesign">提交设计</el-button>
 
+    <!-- 开发中心 -->
+    <el-button v-if="showDevDone" size="small" type="primary" @click="openDevDone">提交开发完成</el-button>
+
     <!-- 待发布 -->
     <el-button v-if="showRelease" size="small" type="success" :loading="busy" @click="onRelease">执行发布</el-button>
 
@@ -248,7 +287,11 @@ async function onDesignSubmit(): Promise<void> {
 
     <el-dialog
       v-model="dialogVisible"
-      :title="dialogKind === 'design' ? '提交设计（设计中心 → 开发中心）' : '评审驳回（作废）'"
+      :title="
+        dialogKind === 'design' ? '提交设计（设计中心 → 开发中心）'
+        : dialogKind === 'devdone' ? '提交开发完成（开发中心 → 待发布）'
+        : '评审驳回（作废）'
+      "
       width="560px"
       destroy-on-close
     >
@@ -274,7 +317,7 @@ async function onDesignSubmit(): Promise<void> {
       </template>
 
       <!-- 设计表单 -->
-      <template v-else>
+      <template v-else-if="dialogKind === 'design'">
         <el-form label-width="92px">
           <el-form-item label="设计说明" required>
             <el-input
@@ -303,6 +346,21 @@ async function onDesignSubmit(): Promise<void> {
             </el-select>
           </el-form-item>
         </el-form>
+      </template>
+
+      <!-- 开发完成表单 -->
+      <template v-else>
+        <el-input
+          v-model="devDoneForm.doneNote"
+          type="textarea"
+          :rows="4"
+          maxlength="1000"
+          show-word-limit
+          placeholder="完成说明：做了什么、自测情况、需要注意的点（至少 5 个字）"
+        />
+        <div class="dialog-atts">
+          <AttachmentUpload v-model="devDoneForm.attachments" :max="9" tip="选填，完成凭证/截图，最多 9 个" />
+        </div>
       </template>
 
       <template #footer>
