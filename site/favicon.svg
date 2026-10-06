@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3357" />
+      <stop offset="1" stop-color="#232a49" />
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#bg)" />
+  <!-- 盾牌/宝石外框（呼应品牌标识） -->
+  <path d="M32 9 15 18v16c0 11 7.2 18.6 17 21 9.8-2.4 17-10 17-21V18L32 9Z" fill="#eaf2ff" opacity="0.92" />
+  <!-- 内层粉色宝石 -->
+  <path d="M32 20.5 22 26v10l10 5.5L42 36V26l-10-5.5Z" fill="#f2a0c0" />
+</svg>

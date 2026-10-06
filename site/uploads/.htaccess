@@ -1,0 +1,19 @@
+# 上传目录：禁止执行脚本，仅允许静态读取
+<FilesMatch "\.(php|php3|php4|php5|php7|phtml|pl|py|cgi|asp|aspx|sh|exe|ini)$">
+  Require all denied
+</FilesMatch>
+
+Options -Indexes
+
+# 图片：允许内联查看（浏览器内置查看器直接预览）
+<IfModule mod_headers.c>
+  <FilesMatch "\.(png|jpe?g|gif|webp|bmp|svg)$">
+    Header set Content-Disposition "inline"
+  </FilesMatch>
+
+  # 其他文档：强制下载，不允许在浏览器内在线查看
+  <FilesMatch "\.(pdf|docx?|xlsx?|pptx?|txt|csv|zip|rar|7z)$">
+    Header set Content-Disposition "attachment"
+    Header set X-Content-Type-Options "nosniff"
+  </FilesMatch>
+</IfModule>

@@ -1,0 +1,41 @@
+# 售后问题反馈系统 · Apache 配置
+# 入口优先级：index.php → index.html → index.htm
+
+DirectoryIndex index.php index.html index.htm
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 入口 HTML 禁止缓存（assets 带内容 hash 可长期缓存，但入口被缓存会导致新版不生效）
+  <FilesMatch "^index\.html$">
+    <IfModule mod_headers.c>
+      Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
+      Header set Pragma "no-cache"
+      Header set Expires "0"
+    </IfModule>
+  </FilesMatch>
+
+  # 带 hash 的静态产物：长期缓存
+  <FilesMatch "\.(js|css|woff2?|png|jpe?g|svg|gif|webp|ico)$">
+    <IfModule mod_headers.c>
+      Header set Cache-Control "public, max-age=31536000, immutable"
+    </IfModule>
+  </FilesMatch>
+
+  # 已存在的真实文件/目录（含 assets、uploads）直接命中
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # 其余路径交给单页应用入口（hash 路由兜底）
+  RewriteRule ^ index.php [L]
+</IfModule>
+
+# 禁止直接列出目录
+Options -Indexes
+
+# 保护配置文件
+<FilesMatch "^\.env$">
+  Require all denied
+</FilesMatch>

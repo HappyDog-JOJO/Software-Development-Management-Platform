@@ -1,0 +1,103 @@
+/* ==========================================================================
+   动效：轻缓、有呼吸感；统一 0.2s / 0.25s ease-in-out
+   禁止弹跳/橡皮筋/超过 0.5s 的长动效/视差/粒子上浮/鼠标跟随
+   ========================================================================== */
+
+/* 月亮 / 星星：缓慢旋转（加载态） */
+@keyframes moon-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 呼吸感（加载态） */
+@keyframes moon-breath {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+/* 空态插画轻微浮动 */
+@keyframes soft-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+/* 成功对勾弹出（弹性幅度极小） */
+@keyframes spark-pop {
+  0% {
+    transform: scale(0.9);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.anim-spin {
+  animation: moon-spin 2s linear infinite;
+  transform-origin: 50% 50%;
+}
+
+.anim-breath {
+  animation: moon-breath 2s ease-in-out infinite;
+}
+
+.anim-float {
+  animation: soft-float 2.4s ease-in-out infinite;
+}
+
+.anim-pop {
+  animation: spark-pop 200ms ease-out both;
+}
+
+/* 淡入 */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.anim-fade-in {
+  animation: fade-in 0.25s ease-in-out both;
+}
+
+/* ==========================================================================
+   prefers-reduced-motion：命中时关闭所有循环与位移动效
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .anim-spin,
+  .anim-breath,
+  .anim-float,
+  .anim-pop,
+  .anim-fade-in {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

@@ -1,0 +1,710 @@
+/* ==========================================================================
+   夜空软萌 · 主题 token（本系统视觉唯一权威）
+   深夜蓝静谧底色 + 月光白软卡片 + 樱粉/星芒点缀，圆润造型、柔和阴影、轻缓动效。
+   主色只在 token 层定义，业务组件不得硬编码色值。
+   ========================================================================== */
+
+:root {
+  /* —— 品牌与点缀 —— */
+  --color-primary: #7c8ce4;
+  --color-primary-hover: #6b7bd9;
+  --color-primary-active: #5c6cc9;
+  --color-primary-soft: #a8b4f0;
+  --color-primary-tint: #edf0fd;
+  --color-accent-pink: #f2a0c0;
+  --color-accent-tint: #fdeef4;
+  --color-moonlight: #eaf2ff;
+
+  /* —— 底色体系 —— */
+  --color-bg-page: #f4f6fd;
+  --color-bg-container: #ffffff;
+  --color-bg-sub: #f8fafe;
+  --color-night: #2b3357;
+  --color-night-deep: #232a49;
+
+  /* —— 文字 —— */
+  --color-text-primary: rgba(43, 51, 87, 0.88);
+  --color-text-regular: rgba(43, 51, 87, 0.65);
+  --color-text-secondary: rgba(43, 51, 87, 0.58);
+  --color-text-placeholder: rgba(43, 51, 87, 0.38);
+  --color-text-on-night: rgba(255, 255, 255, 0.94);
+  --color-text-on-night-sub: rgba(255, 255, 255, 0.62);
+
+  /* —— 边框 —— */
+  --color-border: #dde2f2;
+  --color-border-divider: #eaeef9;
+  --color-border-light: #f2f5fc;
+
+  /* —— 功能色（柔化版）—— */
+  --color-success: #5fc9a0;
+  --color-warning: #f5b961;
+  --color-danger: #ef7c8e;
+  --color-info: #7c8ce4;
+  --color-success-tint: #eaf8f2;
+  --color-warning-tint: #fef5e8;
+  --color-danger-tint: #fdeef0;
+  --color-greyblue: #5d688e;
+  --color-greyblue-tint: #eef1f8;
+
+  /* —— 圆角（软萌感核心）—— */
+  --radius-control: 8px;
+  --radius-card: 16px;
+  --radius-large: 20px;
+  --radius-pill: 999px;
+
+  /* —— 阴影（大范围低透明蓝调）—— */
+  --shadow-card: 0 4px 16px rgba(124, 140, 228, 0.1);
+  --shadow-card-hover: 0 6px 20px rgba(124, 140, 228, 0.16);
+  --shadow-dialog: 0 8px 32px rgba(43, 51, 87, 0.12);
+  --shadow-button: 0 2px 8px rgba(124, 140, 228, 0.22);
+
+  /* —— 间距（4px 倍数）—— */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* —— 动效 —— */
+  --transition-base: 0.2s ease-in-out;
+  --transition-slow: 0.25s ease-in-out;
+}
+
+/* ==========================================================================
+   Element Plus 主题变量覆盖
+   ========================================================================== */
+:root {
+  --el-color-primary: #7c8ce4;
+  --el-color-primary-light-3: #a8b4f0;
+  --el-color-primary-light-5: #c1c9f5;
+  --el-color-primary-light-7: #dae0fa;
+  --el-color-primary-light-8: #e7ebfc;
+  --el-color-primary-light-9: #edf0fd;
+  --el-color-primary-dark-2: #6b7bd9;
+
+  --el-color-success: #5fc9a0;
+  --el-color-success-light-9: #eaf8f2;
+  --el-color-warning: #f5b961;
+  --el-color-warning-light-9: #fef5e8;
+  --el-color-danger: #ef7c8e;
+  --el-color-danger-light-9: #fdeef0;
+  --el-color-error: #ef7c8e;
+  --el-color-error-light-9: #fdeef0;
+  --el-color-info: #7c8ce4;
+  --el-color-info-light-9: #edf0fd;
+
+  --el-text-color-primary: rgba(43, 51, 87, 0.88);
+  --el-text-color-regular: rgba(43, 51, 87, 0.65);
+  --el-text-color-secondary: rgba(43, 51, 87, 0.45);
+  --el-text-color-placeholder: rgba(43, 51, 87, 0.25);
+  --el-text-color-disabled: rgba(43, 51, 87, 0.25);
+
+  --el-border-color: #dde2f2;
+  --el-border-color-light: #eaeef9;
+  --el-border-color-lighter: #f2f5fc;
+  --el-border-color-extra-light: #f7f9fd;
+
+  --el-fill-color: #f8fafe;
+  --el-fill-color-light: #f8fafe;
+  --el-fill-color-lighter: #fbfcff;
+  --el-fill-color-blank: #ffffff;
+  --el-bg-color: #ffffff;
+  --el-bg-color-page: #f4f6fd;
+  --el-bg-color-overlay: #ffffff;
+
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 6px;
+  --el-border-radius-round: 999px;
+
+  --el-box-shadow-light: 0 4px 16px rgba(124, 140, 228, 0.1);
+  --el-box-shadow: 0 4px 16px rgba(124, 140, 228, 0.1);
+  --el-box-shadow-lighter: 0 2px 10px rgba(124, 140, 228, 0.08);
+
+  /* 弹窗/抽屉遮罩（浅色柔和，不用深色蒙层） */
+  --el-overlay-color-lighter: rgba(43, 51, 87, 0.28);
+  --el-mask-color: rgba(255, 255, 255, 0.85);
+
+  --el-font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif;
+}
+
+/* ==========================================================================
+   基础布局与排版
+   ========================================================================== */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--el-font-family);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  background: var(--color-bg-page);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 数字与排行数值使用圆润字重 */
+.num-strong {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 控件统一尺寸：默认 36px，大号 44px（提升可点击面积与可读性） */
+:root {
+  --el-component-size: 36px;
+  --el-component-size-large: 44px;
+  --el-component-size-small: 32px;
+  --el-font-size-base: 15px;
+  --el-font-size-small: 14px;
+}
+
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+/* ==========================================================================
+   通用容器：卡片 / 区块
+   ========================================================================== */
+.moon-card {
+  position: relative;
+  background: var(--color-bg-container);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-6);
+  transition: box-shadow var(--transition-base), transform var(--transition-base);
+}
+
+.moon-card--hoverable:hover {
+  box-shadow: var(--shadow-card-hover);
+  transform: translateY(-1px);
+}
+
+/* 卡片顶部极淡月光高光（仅装饰，不影响文字对比度） */
+.moon-card--moonlit::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  background: linear-gradient(90deg, var(--color-moonlight), rgba(234, 242, 255, 0.35) 55%, transparent);
+  pointer-events: none;
+}
+
+.moon-card--tight {
+  padding: var(--space-4);
+}
+
+/* 页面容器
+ * 不在此层裁切横向溢出：灯牌摆动会探出 .page 右边界，
+ * 若这里 clip/hidden 会把牌面切掉。横向溢出统一由外层
+ * .main-layout__content 按内边距裁切（见 MainLayout）。 */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+/* 页面标题说明区（page__head/page__title/page__desc）已按需求移除，内容直接从首个卡片开始。 */
+
+/* 页面顶部工具栏（列表页右上角的主操作按钮）。
+ * 统一由全局样式控制，各页不再各自写负边距；顶部间距由 .page 的 gap 统一提供，
+ * 保证每个页面的顶部留白一致。 */
+.page__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.page__actions--toolbar {
+  justify-content: flex-end;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-4);
+}
+
+.section-title__hint {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+}
+
+/* ==========================================================================
+   胶囊 Tag（状态 / 价值 / 角色 / 筛选 chip）
+   ========================================================================== */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 12px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.pill--primary {
+  color: #4f5fbd;
+  background: var(--color-primary-tint);
+}
+
+.pill--pink {
+  color: #b05578;
+  background: var(--color-accent-tint);
+}
+
+.pill--green {
+  color: #2c7d5e;
+  background: var(--color-success-tint);
+}
+
+.pill--yellow {
+  color: #9c6a17;
+  background: var(--color-warning-tint);
+}
+
+.pill--red {
+  color: #b04256;
+  background: var(--color-danger-tint);
+}
+
+.pill--grey {
+  color: #5d688e;
+  background: var(--color-greyblue-tint);
+}
+
+/* —— 价值标签：描边样式 + 分级色相（与实心的状态胶囊形态区分）—— */
+.pill--value-high {
+  color: #3f7d5f;
+  background: #f1faf5;
+  border: 1px solid #bfe3d1;
+}
+
+.pill--value-mid {
+  color: #4f5fbd;
+  background: #f5f7fe;
+  border: 1px solid #ccd4f6;
+}
+
+.pill--value-none {
+  color: #5d688e;
+  background: transparent;
+  border: 1px solid var(--color-border);
+}
+
+/* 未评级：虚线描边 + 更淡文字，与「毫无价值」区分 */
+.pill--value-unrated {
+  color: var(--color-text-placeholder);
+  background: transparent;
+  border: 1px dashed var(--color-border);
+}
+
+/* ==========================================================================
+   表格：15px 正文、舒展行高、带边框与列宽可拖动
+   ========================================================================== */
+.moon-table {
+  /* 数据密集表格：列宽足够显示完整字段，放不下时由 el-table 自身横向滚动 */
+  width: 100%;
+}
+
+/* 表格外层容器：允许横向滚动，不压缩列宽 */
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.moon-table .el-table {
+  font-size: 15px;
+  --el-table-border-color: var(--color-border);
+  --el-table-header-bg-color: var(--color-bg-sub);
+  --el-table-row-hover-bg-color: #f8fafe;
+  --el-table-header-text-color: var(--color-text-primary);
+  --el-table-text-color: var(--color-text-primary);
+}
+
+.moon-table .el-table th.el-table__cell {
+  font-weight: 600;
+  background: var(--color-bg-sub);
+}
+
+/* 行高与内边距：提升可读性与点击面积（两行结构行高约 60px） */
+.moon-table .el-table__cell {
+  padding: 8px 0;
+}
+
+/* 列宽拖动把手：加宽热区、带悬停提示色 */
+.moon-table .el-table__column-resize-proxy {
+  border-left: 2px solid var(--color-primary);
+  background: var(--color-primary-tint);
+}
+
+.moon-table .el-table th.el-table__cell {
+  position: relative;
+}
+
+/* 表格内的操作按钮：统一为紧凑的文字（link）按钮。
+ * 注意：Element Plus 的 link 按钮类名是 .is-link（不是 .el-button--link），
+ * 选错选择器会导致规则静默失效。 */
+.moon-table .el-button.is-link {
+  height: auto;
+  min-height: 0;
+  padding: 2px 0;
+  font-size: 14px;
+  line-height: 1.5;
+  /* 文字按钮无背景，必须去掉主按钮阴影：否则阴影会围出一个比文字大的方块 */
+  box-shadow: none;
+}
+
+.moon-table .el-button.is-link:hover,
+.moon-table .el-button.is-link:focus {
+  /* 文字按钮不做位移与阴影，仅变色 */
+  transform: none;
+  box-shadow: none;
+}
+
+/* 相邻文字按钮之间保留均匀间距 */
+.moon-table .el-button.is-link + .el-button.is-link {
+  margin-left: 10px;
+}
+
+/* 操作列单元格：按钮单行排列、整体居中，不因换行而撑高行高 */
+.moon-table .cell--actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  white-space: nowrap;
+  flex-wrap: nowrap;
+}
+
+/* 消除 Element Plus 相邻按钮默认的 margin-left，避免列宽虚耗 */
+.moon-table .cell--actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+.moon-table .cell--actions--fixed .el-button + .el-button {
+  margin-left: 0;
+}
+
+/* 固定两列的操作列（问题列表）：保证有无主操作时「详情」仍对齐，整体居中。
+ * 主操作列宽需容下最宽文案「追加处理」（4 字 × 14px）；删除按钮仅管理员可见，
+ * 非管理员时三列布局会空出最后一格（不影响对齐）。 */
+.moon-table .cell--actions--fixed {
+  display: grid;
+  grid-template-columns: 58px 44px 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+/* 表格外的普通单元格保持原有对齐（仅带 .cell--actions 的操作列改为 flex） */
+.moon-table .el-table__cell .cell {
+  line-height: 1.5;
+}
+
+/* 表头文字不换行，避免多字列被挤成两行而撑高表头 */
+.moon-table th.el-table__cell .cell {
+  padding-right: 6px;
+  white-space: nowrap;
+}
+
+/* 表头分隔线加在可拖动列上，提示此处可拖 */
+.moon-table th.el-table__cell:not(:last-child)::after {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 60%;
+  background: var(--color-border);
+  content: '';
+}
+
+/* 时间等结构化文本不换行，避免半截显示 */
+.moon-table .cell-nowrap {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 单元格内描述文本单行截断 */
+.cell-ellipsis {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ==========================================================================
+   表格单元格悬浮提示（el-tooltip）宽度约束
+   问题：描述/处理备注等长文本使用 tooltip 时，Element Plus 默认
+   max-width: none，长文本会被拉成整行（最宽可达整个屏幕宽），
+   既难读也遮挡页面。这里统一限制一个舒适的阅读宽度，
+   让长文本自动换行、多行展示。
+   说明：popper 由 Teleport 挂到 body，scoped 样式选不到，
+   因此必须写在全局样式里。
+   ========================================================================== */
+.el-popper.el-tooltip:not(.el-popover):not(.el-dropdown__popper):not(.el-select__popper):not(.el-picker__popper) {
+  max-width: min(520px, 86vw);
+  line-height: 1.65;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+/* 表格内的纯文字 tooltip（is-dark 无边框）：内边距略放大，长文本更好读 */
+.el-popper.is-dark.el-tooltip:not(.el-popover):not(.el-dropdown__popper):not(.el-select__popper):not(.el-picker__popper) {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+/* ==========================================================================
+   筛选区：数据密集区，装饰最低；行尾按钮自动靠右
+   ========================================================================== */
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.filter-bar__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 按钮组：推到最后一行右侧 */
+.filter-bar__item--actions {
+  margin-left: auto;
+}
+
+.filter-bar__label {
+  font-size: 14px;
+  color: var(--color-text-regular);
+  white-space: nowrap;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  /* 工具栏与下方表格之间留出间距（卡片是块级布局，不会自动产生间隙） */
+  margin-bottom: var(--space-3);
+}
+
+/* 只有操作按钮时右对齐（总数已由底部分页器展示，避免重复） */
+.toolbar--actions-only {
+  justify-content: flex-end;
+}
+
+.toolbar__meta {
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* 权限外条数提示条：提高对比度与存在感 */
+.scope-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px 14px;
+  border-radius: var(--radius-control);
+  background: var(--color-primary-tint);
+  border-left: 3px solid var(--color-primary);
+  color: #3f4da8;
+  font-size: 14px;
+}
+
+/* ==========================================================================
+   表单 / 只读项
+   ========================================================================== */
+.readonly-field {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: var(--radius-control);
+  background: var(--color-bg-sub);
+  color: var(--color-text-regular);
+  border: 1px solid var(--color-border-divider);
+}
+
+.form-tip {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+/* ==========================================================================
+   Element Plus 组件圆角与观感微调
+   ========================================================================== */
+.el-button {
+  border-radius: var(--radius-control);
+  transition: all var(--transition-base);
+  font-size: 14px;
+}
+
+/* 主按钮高度与内边距：提升可点击面积（链接类按钮保持紧凑，避免撑高表格行） */
+.el-button:not(.is-link):not(.el-button--text):not(.is-circle):not(.el-button--text) {
+  min-height: 36px;
+  padding: 0 18px;
+}
+
+.el-button--large:not(.is-link) {
+  min-height: 44px;
+  padding: 0 22px;
+  font-size: 15px;
+}
+
+/* 筛选区按钮不超出容器宽度 */
+.filter-bar .el-button {
+  padding: 0 14px;
+}
+
+.el-button--primary {
+  box-shadow: var(--shadow-button);
+}
+
+.el-button--primary:hover,
+.el-button--primary:focus {
+  transform: translateY(-1px);
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  border-radius: var(--radius-control);
+}
+
+.el-card,
+.el-dialog,
+.el-drawer {
+  border-radius: var(--radius-card);
+}
+
+.el-dialog__header {
+  margin-right: 0;
+  padding: 20px 24px 12px;
+  font-weight: 600;
+}
+
+.el-dialog__body {
+  padding: 8px 24px 20px;
+}
+
+.el-dialog__footer {
+  padding: 0 24px 20px;
+}
+
+.el-drawer__header {
+  margin-bottom: 12px;
+  padding: 20px 24px 0;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.el-pagination {
+  --el-pagination-button-bg-color: transparent;
+}
+
+.el-pagination.is-background .el-pager li {
+  border-radius: var(--radius-pill);
+}
+
+.el-tag {
+  border-radius: var(--radius-pill);
+}
+
+.el-message {
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-dialog);
+}
+
+.el-tabs__item {
+  font-weight: 500;
+}
+
+.el-tabs__item.is-active {
+  font-weight: 600;
+}
+
+/* 时间线（处理记录） */
+.record-timeline .el-timeline-item__node {
+  background: var(--color-primary-tint);
+  border: 2px solid var(--color-primary);
+}
+
+.record-timeline .el-timeline-item__tail {
+  border-left-color: var(--color-border-divider);
+}
+
+/* ==========================================================================
+   响应式：1366 与平板宽度不破版，布局不依赖固定像素宽度
+   ========================================================================== */
+@media (max-width: 1200px) {
+  .moon-card {
+    padding: var(--space-4);
+  }
+}
+
+@media (max-width: 900px) {
+  .page {
+    gap: var(--space-4);
+  }
+  .filter-bar {
+    gap: var(--space-2);
+  }
+}
+
+/* —— 全局滚动条：细样式（Windows 默认粗滚动条会破坏界面观感） —— */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(122, 128, 176, 0.45) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(122, 128, 176, 0.4);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(122, 128, 176, 0.62);
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}

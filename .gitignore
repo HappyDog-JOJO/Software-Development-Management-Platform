@@ -1,0 +1,26 @@
+# ===== 敏感配置（严禁入库：含线上/本地数据库凭据） =====
+.env
+config/db.local.php
+.env.selftest.bak
+*.local.php
+
+# ===== 依赖 =====
+node_modules/
+
+# ===== 构建产物（可由源码重建：npm run build + node tools/assemble.mjs） =====
+frontend/dist/
+frontend/dist_*/
+site/assets/
+
+# ===== 运行时数据 / 备份 / 临时脚本 =====
+site/uploads/*
+!site/uploads/.htaccess
+backups/
+.cowork-temp/
+
+# ===== 本地杂项 =====
+shot_ref.png
+test_scope_run.py
+*.log
+.DS_Store
+Thumbs.db

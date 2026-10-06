@@ -1,0 +1,804 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * 需求管理模块：需求研发流接口。
+ * 流程：需求提交 → 评审池（评审委员，驳回即作废）→ 需求池（产品经理认领）→
+ *       设计中心（设计文档/分支/开发负责人）→ 开发中心（子任务，全部完成自动流转）→
+ *       质量中心（验收，驳回退回开发中心）→ 待发布 → 发布上线（已上线，终态）。
+ * 可见范围：评审委员/管理员全量；产品经理可见需求池与自己认领的；
+ *           质量审核员可见质量中心/待发布；开发负责人/子任务负责人/提交人可见自己的。
+ * 方案见 docs/需求管理模块-需求方案.md。
+ */
+
+/** 需求编号：XQ + 年月日时分秒 + 3 位随机 */
+function qly_devreq_no(): string
+{
+    return 'XQ' . date('YmdHis') . str_pad((string) random_int(0, 999), 3, '0', STR_PAD_LEFT);
+}
+
+/** 主任务允许的优先级（低/中/高/紧急） */
+function qly_devreq_priorities(): array
+{
+    return ['低', '中', '高', '紧急'];
+}
+
+/** 主任务状态集合（与前端 DevStatus 常量保持一致） */
+function qly_devreq_statuses(): array
+{
+    return ['评审池', '需求池', '设计中心', '开发中心', '质量中心', '待发布', '已上线', '已驳回', '已取消'];
+}
+
+/** 附件落库（scene：submit提交/design设计/reject驳回/done完成/release上线） */
+function qly_devreq_save_attachments(int $requestId, ?int $subTaskId, string $scene, $attachments, int $uploaderId): int
+{
+    $n = 0;
+    if (!is_array($attachments)) {
+        return 0;
+    }
+    foreach ($attachments as $a) {
+        if (!is_array($a) || empty($a['url'])) {
+            continue;
+        }
+        qly_insert('dev_request_attachment', [
+            'request_id' => $requestId,
+            'sub_task_id' => $subTaskId,
+            'scene' => $scene,
+            'url' => (string) $a['url'],
+            'name' => (string) ($a['name'] ?? ''),
+            'size' => (int) ($a['size'] ?? 0),
+            'mime_type' => (string) ($a['mime_type'] ?? ($a['mimeType'] ?? '')),
+            'uploader_id' => $uploaderId,
+            'created_at' => date('Y-m-d H:i:s'),
+        ]);
+        $n++;
+    }
+    return $n;
+}
+
+/** 附件读出 → 前端结构 */
+function qly_devreq_attachments_public(array $rows): array
+{
+    return array_map(fn(array $a): array => [
+        'id' => (int) $a['id'],
+        'requestId' => (int) $a['request_id'],
+        'subTaskId' => $a['sub_task_id'] !== null ? (int) $a['sub_task_id'] : null,
+        'scene' => (string) $a['scene'],
+        'url' => $a['url'],
+        'name' => $a['name'],
+        'size' => (int) $a['size'],
+        'mimeType' => $a['mime_type'],
+        'createdAt' => $a['created_at'],
+    ], $rows);
+}
+
+/** 主任务行 → 前端结构（含子任务进度统计） */
+function qly_devreq_row_public(array $r): array
+{
+    return [
+        'id' => (int) $r['id'],
+        'reqNo' => $r['req_no'],
+        'title' => $r['title'],
+        'description' => $r['description'],
+        'moduleId' => $r['module_id'] !== null ? (int) $r['module_id'] : null,
+        'moduleName' => $r['module_name'] ?? null,
+        'priority' => (string) $r['priority'],
+        'status' => (string) $r['status'],
+        'submitterId' => (int) $r['submitter_id'],
+        'submitterName' => $r['submitter_name'],
+        'submitterAccount' => $r['submitter_account'],
+        'submitterDepartmentName' => $r['department_name'] ?? null,
+        'reviewerName' => $r['reviewer_name'],
+        'reviewComment' => $r['review_comment'],
+        'reviewedAt' => $r['reviewed_at'],
+        'pmId' => $r['pm_id'] !== null ? (int) $r['pm_id'] : null,
+        'pmName' => $r['pm_name'],
+        'designDoc' => $r['design_doc'],
+        'branch' => $r['branch'],
+        'devLeaderId' => $r['dev_leader_id'] !== null ? (int) $r['dev_leader_id'] : null,
+        'devLeaderName' => $r['dev_leader_name'],
+        'designedAt' => $r['designed_at'],
+        'inspectorName' => $r['inspector_name'],
+        'inspectResult' => $r['inspect_result'],
+        'inspectComment' => $r['inspect_comment'],
+        'inspectedAt' => $r['inspected_at'],
+        'rejectCount' => (int) $r['reject_count'],
+        'releasedAt' => $r['released_at'],
+        'releasedBy' => $r['released_by'],
+        'poolAt' => $r['pool_at'],
+        'designAt' => $r['design_at'],
+        'battleAt' => $r['battle_at'],
+        'inspectAt' => $r['inspect_at'],
+        'frontlineAt' => $r['frontline_at'],
+        'subTotal' => (int) ($r['sub_total'] ?? 0),
+        'subDone' => (int) ($r['sub_done'] ?? 0),
+        'createdAt' => $r['created_at'],
+        'updatedAt' => $r['updated_at'],
+    ];
+}
+
+/** 列表基础查询（JOIN 部门 + 子任务统计子查询） */
+function qly_devreq_base_select(): string
+{
+    return ' SELECT i.*, d.name AS department_name,'
+        . ' (SELECT COUNT(*) FROM `dev_sub_task` s WHERE s.request_id = i.id) AS sub_total,'
+        . ' (SELECT COUNT(*) FROM `dev_sub_task` s WHERE s.request_id = i.id AND s.status = \'已完成\') AS sub_done';
+}
+
+function qly_devreq_base_from(): string
+{
+    return ' FROM `dev_request` i LEFT JOIN `department` d ON d.id = i.department_id';
+}
+
+/** 列表筛选（不含权限范围） */
+function qly_devreq_filters(): array
+{
+    $where = '';
+    $params = [];
+    $status = (string) qly_input('status', '');
+    if ($status !== '') {
+        if (!in_array($status, qly_devreq_statuses(), true)) {
+            qly_fail('无效的需求状态');
+        }
+        $where .= ' AND i.status = :st';
+        $params[':st'] = $status;
+    }
+    $priority = (string) qly_input('priority', '');
+    if ($priority !== '') {
+        $where .= ' AND i.priority = :pr';
+        $params[':pr'] = $priority;
+    }
+    $moduleId = qly_input_int('moduleId', 0);
+    if ($moduleId > 0) {
+        $where .= ' AND i.module_id = :mid';
+        $params[':mid'] = $moduleId;
+    }
+    if ((string) qly_input('mine', '') === '1') {
+        $where .= ' AND i.submitter_id = :mine';
+        $params[':mine'] = (int) qly_current_user()['id'];
+    }
+    $keyword = (string) qly_input('keyword', '');
+    if ($keyword !== '') {
+        $where .= ' AND (i.req_no LIKE :kw1 OR i.title LIKE :kw2 OR i.description LIKE :kw3)';
+        $kw = '%' . $keyword . '%';
+        $params[':kw1'] = $kw;
+        $params[':kw2'] = $kw;
+        $params[':kw3'] = $kw;
+    }
+    return [$where, $params];
+}
+
+function qly_api_devreqs_list(): void
+{
+    $user = qly_auth_user();
+    [$filterWhere, $filterParams] = qly_devreq_filters();
+    [$scopeWhere, $scopeParams] = qly_devreq_scope_where($user, 'i');
+
+    $page = max(1, qly_input_int('page', 1));
+    $pageSize = min(200, max(1, qly_input_int('pageSize', 10)));
+    $offset = ($page - 1) * $pageSize;
+
+    $base = qly_devreq_base_from() . ' WHERE 1=1' . $filterWhere;
+    $total = (int) qly_val('SELECT COUNT(*)' . $base . $scopeWhere, array_merge($filterParams, $scopeParams));
+
+    // priority 排序固定为：紧急 > 高 > 中 > 低，同级按提交先后（先到先做）
+    if ((string) qly_input('sortField', 'createdAt') === 'priority') {
+        $order = "FIELD(i.priority, '紧急', '高', '中', '低')";
+        $dir = 'ASC';
+    } else {
+        $order = 'i.created_at';
+        $dir = strtoupper((string) qly_input('sortOrder', 'DESC')) === 'ASC' ? 'ASC' : 'DESC';
+    }
+
+    $rows = qly_all(
+        qly_devreq_base_select() . $base . $scopeWhere
+        . ' ORDER BY ' . $order . ' ' . $dir . ', i.id DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset,
+        array_merge($filterParams, $scopeParams)
+    );
+    qly_ok([
+        'items' => array_map('qly_devreq_row_public', $rows),
+        'total' => $total,
+        'page' => $page,
+        'pageSize' => $pageSize,
+    ]);
+}
+
+/** 需求详情：主任务 + 子任务（含完成附件）+ 需求级附件（按场景）+ 时间线日志 */
+function qly_api_devreqs_detail(): void
+{
+    $user = qly_auth_user();
+    $id = qly_input_int('id', 0);
+    $row = qly_one(qly_devreq_base_select() . qly_devreq_base_from() . ' WHERE i.id = :id', [':id' => $id]);
+    if (!$row) {
+        qly_fail('需求不存在');
+    }
+    if (!qly_devreq_visible($user, $row)) {
+        qly_forbidden('该需求不在您的可见范围');
+    }
+    $data = qly_devreq_row_public($row);
+
+    // 子任务（含各自的完成附件）
+    $subs = qly_all('SELECT * FROM `dev_sub_task` WHERE request_id = :rid ORDER BY id ASC', [':rid' => $id]);
+    $subIds = array_map(fn(array $s): int => (int) $s['id'], $subs);
+    $subAtts = [];
+    if ($subIds) {
+        $in = implode(',', array_fill(0, count($subIds), '?'));
+        foreach (qly_all("SELECT * FROM `dev_request_attachment` WHERE sub_task_id IN ($in)", $subIds) as $a) {
+            $subAtts[(int) $a['sub_task_id']][] = $a;
+        }
+    }
+    $data['subTasks'] = array_map(fn(array $s): array => [
+        'id' => (int) $s['id'],
+        'requestId' => (int) $s['request_id'],
+        'title' => $s['title'],
+        'description' => $s['description'],
+        'assigneeId' => (int) $s['assignee_id'],
+        'assigneeName' => $s['assignee_name'],
+        'branch' => $s['branch'],
+        'status' => (string) $s['status'],
+        'doneNote' => $s['done_note'],
+        'doneAt' => $s['done_at'],
+        'createdAt' => $s['created_at'],
+        'updatedAt' => $s['updated_at'],
+        'attachments' => qly_devreq_attachments_public($subAtts[(int) $s['id']] ?? []),
+    ], $subs);
+
+    // 需求级附件（提交/设计/驳回/上线）
+    $data['attachments'] = qly_devreq_attachments_public(
+        qly_all('SELECT * FROM `dev_request_attachment` WHERE request_id = :rid AND sub_task_id IS NULL ORDER BY id ASC', [':rid' => $id])
+    );
+
+    // 时间线日志（该需求相关的全部需求流日志）
+    $logs = [];
+    $types = ['提交需求', '需求评审', '需求设计', '需求开发', '质量审核', '需求发布'];
+    $in = [];
+    $params = [':t' => '%' . $row['req_no'] . '%'];
+    foreach ($types as $k => $t) {
+        $in[] = ':lg' . $k;
+        $params[':lg' . $k] = $t;
+    }
+    foreach (qly_all(
+        'SELECT * FROM `operation_log` WHERE target LIKE :t AND type IN (' . implode(',', $in) . ') ORDER BY created_at DESC, id DESC LIMIT 100',
+        $params
+    ) as $l) {
+        $logs[] = [
+            'id' => (int) $l['id'],
+            'account' => $l['account'],
+            'role' => $l['role'],
+            'type' => $l['type'],
+            'content' => $l['content'],
+            'createdAt' => $l['created_at'],
+        ];
+    }
+    $data['logs'] = $logs;
+
+    qly_ok($data);
+}
+
+/** 提交需求：所有登录用户 → 进入评审池 */
+function qly_api_devreqs_create(): void
+{
+    $user = qly_auth_user();
+    $title = (string) qly_input('title', '');
+    $description = (string) qly_input('description', '');
+    $moduleId = qly_input_int('moduleId', 0);
+    $priority = (string) qly_input('priority', '中');
+    $attachments = qly_input('attachments', []);
+
+    if (mb_strlen(trim($title)) < 4) {
+        qly_fail('需求标题至少 4 个字');
+    }
+    if (mb_strlen($description) < 10) {
+        qly_fail('需求描述至少 10 个字');
+    }
+    if ($moduleId <= 0) {
+        qly_fail('请选择所属模块');
+    }
+    $module = qly_one('SELECT * FROM `dict_item` WHERE id = :id AND type = :t', [':id' => $moduleId, ':t' => 'module']);
+    if (!$module) {
+        qly_fail('所属模块不存在');
+    }
+    if ((int) $module['status'] !== 1) {
+        qly_fail('该模块已停用，请选择其他模块');
+    }
+    if (!in_array($priority, qly_devreq_priorities(), true)) {
+        $priority = '中';
+    }
+    if (is_array($attachments) && count($attachments) > 9) {
+        qly_fail('附件最多 9 个');
+    }
+
+    $reqNo = qly_devreq_no();
+    $now = date('Y-m-d H:i:s');
+    $id = qly_insert('dev_request', [
+        'req_no' => $reqNo,
+        'title' => trim($title),
+        'description' => $description,
+        'module_id' => $moduleId,
+        'module_name' => (string) $module['name'],
+        'priority' => $priority,
+        'status' => '评审池',
+        'submitter_id' => (int) $user['id'],
+        'submitter_account' => (string) $user['account'],
+        'submitter_name' => $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'],
+        'department_id' => $user['department_id'] !== null ? (int) $user['department_id'] : null,
+        'created_at' => $now,
+    ]);
+    qly_devreq_save_attachments($id, null, 'submit', $attachments, (int) $user['id']);
+
+    qly_log($user, '提交需求', $reqNo, '提交需求：' . trim($title) . '（模块：' . $module['name'] . '，优先级：' . $priority . '，附件 ' . count((array) $attachments) . ' 个）');
+    qly_notify(
+        qly_notify_user_ids_by_roles([QLY_ROLE_COMMITTEE, QLY_ROLE_ADMIN]),
+        '新需求进入评审池',
+        '【' . $module['name'] . '】' . trim($title),
+        '/dev/reqs/' . $id,
+        (int) $user['id']
+    );
+    qly_ok(['id' => $id, 'reqNo' => $reqNo], '需求已提交，等待评审委员会评审');
+}
+
+/** 取消需求（提交人本人或管理员；仅评审池/需求池阶段） */
+function qly_api_devreqs_cancel(): void
+{
+    $user = qly_auth_user();
+    $id = qly_input_int('id', 0);
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
+    if (!$row) {
+        qly_fail('需求不存在');
+    }
+    $isAdmin = qly_has_role($user, [QLY_ROLE_ADMIN]);
+    if (!$isAdmin && (int) $row['submitter_id'] !== (int) $user['id']) {
+        qly_forbidden('仅提交人本人可取消需求');
+    }
+    if (!in_array((string) $row['status'], ['评审池', '需求池'], true)) {
+        qly_fail('当前阶段不可取消（仅评审池/需求池可取消）');
+    }
+    qly_update('dev_request', $id, ['status' => '已取消', 'updated_at' => date('Y-m-d H:i:s')]);
+    qly_log($user, '需求评审', (string) $row['req_no'], '取消需求：' . $row['title'] . '（阶段：' . $row['status'] . '）');
+    qly_ok(null, '需求已取消');
+}
+
+/** 评审：评审委员 通过→需求池 / 驳回→直接作废（终态，不可重提） */
+function qly_api_devreqs_review(): void
+{
+    $user = qly_auth_user();
+    if (!qly_can_review_req($user)) {
+        qly_forbidden('仅评审委员或管理员可评审需求');
+    }
+    $id = qly_input_int('id', 0);
+    $action = (string) qly_input('action', '');
+    $comment = trim((string) qly_input('comment', ''));
+    $attachments = qly_input('attachments', []);
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
+    if (!$row) {
+        qly_fail('需求不存在');
+    }
+    if ((string) $row['status'] !== '评审池') {
+        qly_fail('该需求不在评审池');
+    }
+    $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
+    $now = date('Y-m-d H:i:s');
+
+    if ($action === '通过') {
+        qly_update('dev_request', $id, [
+            'status' => '需求池',
+            'reviewer_id' => (int) $user['id'],
+            'reviewer_name' => $name,
+            'review_comment' => $comment !== '' ? $comment : null,
+            'reviewed_at' => $now,
+            'pool_at' => $now,
+            'updated_at' => $now,
+        ]);
+        qly_log($user, '需求评审', (string) $row['req_no'], '评审通过：' . $row['title'] . ($comment !== '' ? '，意见：' . mb_substr($comment, 0, 80) : ''));
+        qly_notify([(int) $row['submitter_id']], '您的需求已评审通过', '需求 ' . $row['req_no'] . ' 已进入需求池，等待产品经理认领设计', '/dev/reqs/' . $id, (int) $user['id']);
+        qly_notify(
+            qly_notify_user_ids_by_roles([QLY_ROLE_PM]),
+            '需求池有新任务',
+            '【' . $row['module_name'] . '】' . $row['title'],
+            '/dev/reqs/' . $id,
+            (int) $user['id']
+        );
+        qly_ok(null, '评审通过，需求已进入需求池');
+    }
+
+    if ($action === '驳回') {
+        if (mb_strlen($comment) < 5) {
+            qly_fail('驳回原因至少 5 个字');
+        }
+        // 评审驳回 = 直接作废（终态，不可重提；仍需要则重新提交新需求）
+        qly_update('dev_request', $id, [
+            'status' => '已驳回',
+            'reviewer_id' => (int) $user['id'],
+            'reviewer_name' => $name,
+            'review_comment' => $comment,
+            'reviewed_at' => $now,
+            'updated_at' => $now,
+        ]);
+        qly_devreq_save_attachments($id, null, 'reject', $attachments, (int) $user['id']);
+        qly_log($user, '需求评审', (string) $row['req_no'], '评审驳回（作废）：' . $row['title'] . '，原因：' . mb_substr($comment, 0, 80));
+        qly_notify([(int) $row['submitter_id']], '您的需求未通过评审', '需求 ' . $row['req_no'] . ' 已作废。驳回原因：' . mb_substr($comment, 0, 80), '/dev/reqs/' . $id, (int) $user['id']);
+        qly_ok(null, '已驳回，该需求已作废');
+    }
+
+    qly_fail('无效的评审操作');
+}
+
+/** 产品经理认领：需求池 → 设计中心 */
+function qly_api_devreqs_claim(): void
+{
+    $user = qly_auth_user();
+    if (!qly_can_design_req($user)) {
+        qly_forbidden('仅产品经理或管理员可认领需求');
+    }
+    $id = qly_input_int('id', 0);
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
+    if (!$row) {
+        qly_fail('需求不存在');
+    }
+    if ((string) $row['status'] !== '需求池') {
+        qly_fail('该需求不在需求池');
+    }
+    $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
+    $now = date('Y-m-d H:i:s');
+    qly_update('dev_request', $id, [
+        'status' => '设计中心',
+        'pm_id' => (int) $user['id'],
+        'pm_name' => $name,
+        'design_at' => $now,
+        'updated_at' => $now,
+    ]);
+    qly_log($user, '需求设计', (string) $row['req_no'], '产品经理认领，进入设计中心设计：' . $row['title']);
+    qly_notify([(int) $row['submitter_id']], '您的需求已进入设计阶段', '产品经理 ' . $name . ' 已认领需求 ' . $row['req_no'], '/dev/reqs/' . $id, (int) $user['id']);
+    qly_ok(null, '认领成功，已进入设计中心');
+}
+
+/** 设计中心完成设计：设计说明 + 开发分支 + 开发负责人 → 开发中心 */
+function qly_api_devreqs_design(): void
+{
+    $user = qly_auth_user();
+    if (!qly_can_design_req($user)) {
+        qly_forbidden('仅产品经理或管理员可提交设计');
+    }
+    $id = qly_input_int('id', 0);
+    $designDoc = (string) qly_input('designDoc', '');
+    $branch = trim((string) qly_input('branch', ''));
+    $devLeaderId = qly_input_int('devLeaderId', 0);
+    $attachments = qly_input('attachments', []);
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
+    if (!$row) {
+        qly_fail('需求不存在');
+    }
+    if ((string) $row['status'] !== '设计中心') {
+        qly_fail('该需求不在设计中心');
+    }
+    $isAdmin = qly_has_role($user, [QLY_ROLE_ADMIN]);
+    if (!$isAdmin && (int) ($row['pm_id'] ?? 0) !== (int) $user['id']) {
+        qly_forbidden('仅认领该需求的产品经理可提交设计');
+    }
+    if (mb_strlen($designDoc) < 10) {
+        qly_fail('设计说明至少 10 个字');
+    }
+    if ($branch === '') {
+        qly_fail('请填写开发分支');
+    }
+    if (!preg_match('/^[A-Za-z0-9_\-\.\/]{1,100}$/', $branch)) {
+        qly_fail('开发分支格式不正确（仅限字母数字 _ - . /）');
+    }
+    if ($devLeaderId <= 0) {
+        qly_fail('请选择开发负责人');
+    }
+    $leader = qly_one('SELECT * FROM `user` WHERE id = :id AND status = 1', [':id' => $devLeaderId]);
+    if (!$leader) {
+        qly_fail('开发负责人不存在或已禁用');
+    }
+    if (!qly_has_role($leader, [QLY_ROLE_DEV])) {
+        qly_fail('开发负责人必须拥有「开发工程师」角色');
+    }
+    if (is_array($attachments) && count($attachments) > 9) {
+        qly_fail('附件最多 9 个');
+    }
+
+    $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
+    $leaderName = $leader['name'] !== '' ? (string) $leader['name'] : (string) $leader['account'];
+    $now = date('Y-m-d H:i:s');
+    qly_update('dev_request', $id, [
+        'design_doc' => $designDoc,
+        'branch' => $branch,
+        'dev_leader_id' => $devLeaderId,
+        'dev_leader_name' => $leaderName,
+        'designed_at' => $now,
+        'status' => '开发中心',
+        'battle_at' => $now,
+        'updated_at' => $now,
+    ]);
+    qly_devreq_save_attachments($id, null, 'design', $attachments, (int) $user['id']);
+    qly_log($user, '需求设计', (string) $row['req_no'], '设计完成进入开发中心：' . $row['title'] . '，分支 ' . $branch . '，开发负责人 ' . $leaderName);
+    qly_notify([$devLeaderId], '新的开发任务', '【' . $row['title'] . '】分支 ' . $branch . '，请在开发中心创建子任务并组织开发', '/dev/reqs/' . $id, (int) $user['id']);
+    qly_ok(null, '设计已提交，任务进入开发中心');
+}
+
+/** 子任务全部完成 → 主任务自动进入质量中心 */
+function qly_devreq_auto_inspect(array $row, array $actor, int $subTotal = 0): void
+{
+    $pending = (int) qly_val(
+        "SELECT COUNT(*) FROM `dev_sub_task` WHERE request_id = :rid AND status <> '已完成'",
+        [':rid' => (int) $row['id']]
+    );
+    if ($pending > 0 || (string) $row['status'] !== '开发中心') {
+        return;
+    }
+    $now = date('Y-m-d H:i:s');
+    qly_update('dev_request', (int) $row['id'], ['status' => '质量中心', 'inspect_at' => $now, 'updated_at' => $now]);
+    qly_log($actor, '需求开发', (string) $row['req_no'], '全部子任务完成，自动进入质量中心待验收');
+    $inspectors = qly_notify_user_ids_by_roles([QLY_ROLE_INSPECTOR, QLY_ROLE_COMMITTEE, QLY_ROLE_ADMIN]);
+    qly_notify($inspectors, '需求待质量验收', '【' . $row['title'] . '】开发完成（共 ' . $subTotal . ' 个子任务），请验收', '/dev/reqs/' . $row['id'], (int) $actor['id']);
+}
+
+/** 创建子任务（开发负责人或管理员；主任务须在开发中心） */
+function qly_api_subtasks_create(): void
+{
+    $user = qly_auth_user();
+    $requestId = qly_input_int('requestId', 0);
+    $title = trim((string) qly_input('title', ''));
+    $description = (string) qly_input('description', '');
+    $assigneeId = qly_input_int('assigneeId', 0);
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $requestId]);
+    if (!$row) {
+        qly_fail('需求不存在');
+    }
+    $isAdmin = qly_has_role($user, [QLY_ROLE_ADMIN]);
+    if (!$isAdmin && (int) ($row['dev_leader_id'] ?? 0) !== (int) $user['id']) {
+        qly_forbidden('仅开发负责人或管理员可创建子任务');
+    }
+    if ((string) $row['status'] !== '开发中心') {
+        qly_fail('主任务不在开发中心，无法创建子任务');
+    }
+    if (mb_strlen($title) < 4) {
+        qly_fail('子任务标题至少 4 个字');
+    }
+    if ($assigneeId <= 0) {
+        qly_fail('请选择子任务负责人');
+    }
+    $assignee = qly_one('SELECT * FROM `user` WHERE id = :id AND status = 1', [':id' => $assigneeId]);
+    if (!$assignee) {
+        qly_fail('子任务负责人不存在或已禁用');
+    }
+    if (!qly_has_role($assignee, [QLY_ROLE_DEV])) {
+        qly_fail('子任务负责人必须拥有「开发工程师」角色');
+    }
+    $now = date('Y-m-d H:i:s');
+    $subId = qly_insert('dev_sub_task', [
+        'request_id' => $requestId,
+        'title' => $title,
+        'description' => $description,
+        'assignee_id' => $assigneeId,
+        'assignee_name' => $assignee['name'] !== '' ? (string) $assignee['name'] : (string) $assignee['account'],
+        'branch' => $row['branch'],
+        'status' => '待开发',
+        'created_at' => $now,
+        'updated_at' => $now,
+    ]);
+    $subCount = (int) qly_val('SELECT COUNT(*) FROM `dev_sub_task` WHERE request_id = :rid', [':rid' => $requestId]);
+    qly_log($user, '需求开发', (string) $row['req_no'], '创建子任务：' . $title . '，负责人 ' . $assignee['name'] . '（第 ' . $subCount . ' 个）');
+    qly_notify([$assigneeId], '子任务指派给你', '【' . $row['title'] . '】' . $title . '（分支 ' . (string) $row['branch'] . '）', '/dev/reqs/' . $requestId, (int) $user['id']);
+    qly_ok(['id' => $subId, 'subCount' => $subCount], '子任务已创建');
+}
+
+/** 子任务开工（负责人自领；待开发/需返工 → 开发中） */
+function qly_api_subtasks_start(): void
+{
+    $user = qly_auth_user();
+    $id = qly_input_int('id', 0);
+    $sub = qly_one('SELECT * FROM `dev_sub_task` WHERE id = :id', [':id' => $id]);
+    if (!$sub) {
+        qly_fail('子任务不存在');
+    }
+    $isAdmin = qly_has_role($user, [QLY_ROLE_ADMIN]);
+    if (!$isAdmin && (int) $sub['assignee_id'] !== (int) $user['id']) {
+        qly_forbidden('仅子任务负责人可开工');
+    }
+    if (!in_array((string) $sub['status'], ['待开发', '需返工'], true)) {
+        qly_fail('该子任务当前不可开工');
+    }
+    $now = date('Y-m-d H:i:s');
+    qly_update('dev_sub_task', $id, ['status' => '开发中', 'updated_at' => $now]);
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => (int) $sub['request_id']]);
+    qly_log($user, '需求开发', (string) $row['req_no'], '子任务开工：' . $sub['title']);
+    qly_ok(null, '已开工');
+}
+
+/** 子任务提交完成（负责人；完成说明必填）→ 全部完成时父任务自动进质量中心 */
+function qly_api_subtasks_done(): void
+{
+    $user = qly_auth_user();
+    $id = qly_input_int('id', 0);
+    $doneNote = (string) qly_input('doneNote', '');
+    $attachments = qly_input('attachments', []);
+    $sub = qly_one('SELECT * FROM `dev_sub_task` WHERE id = :id', [':id' => $id]);
+    if (!$sub) {
+        qly_fail('子任务不存在');
+    }
+    $isAdmin = qly_has_role($user, [QLY_ROLE_ADMIN]);
+    if (!$isAdmin && (int) $sub['assignee_id'] !== (int) $user['id']) {
+        qly_forbidden('仅子任务负责人可提交完成');
+    }
+    if (in_array((string) $sub['status'], ['已完成'], true)) {
+        qly_fail('该子任务已完成');
+    }
+    if (mb_strlen($doneNote) < 5) {
+        qly_fail('完成说明至少 5 个字');
+    }
+    if (is_array($attachments) && count($attachments) > 9) {
+        qly_fail('附件最多 9 个');
+    }
+    $now = date('Y-m-d H:i:s');
+    qly_update('dev_sub_task', $id, [
+        'status' => '已完成',
+        'done_note' => $doneNote,
+        'done_at' => $now,
+        'updated_at' => $now,
+    ]);
+    qly_devreq_save_attachments((int) $sub['request_id'], $id, 'done', $attachments, (int) $user['id']);
+
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => (int) $sub['request_id']]);
+    qly_log($user, '需求开发', (string) $row['req_no'], '子任务完成：' . $sub['title'] . '，说明：' . mb_substr($doneNote, 0, 80));
+
+    // 进度通知产品经理与开发负责人（x/y）
+    $total = (int) qly_val('SELECT COUNT(*) FROM `dev_sub_task` WHERE request_id = :rid', [':rid' => (int) $sub['request_id']]);
+    $done = (int) qly_val("SELECT COUNT(*) FROM `dev_sub_task` WHERE request_id = :rid AND status = '已完成'", [':rid' => (int) $sub['request_id']]);
+    $watchIds = array_values(array_unique(array_filter([(int) ($row['pm_id'] ?? 0), (int) ($row['dev_leader_id'] ?? 0)])));
+    qly_notify($watchIds, '子任务进度 ' . $done . '/' . $total, '【' . $row['title'] . '】' . $sub['title'] . ' 已完成', '/dev/reqs/' . (int) $sub['request_id'], (int) $user['id']);
+
+    // 全部完成 → 父任务自动进入质量中心
+    qly_devreq_auto_inspect($row, $user, $total);
+    qly_ok(['done' => $done, 'total' => $total], '子任务已完成');
+}
+
+/** 质量验收：通过 → 待发布；驳回 → 退回开发中心（子任务标记需返工） */
+function qly_api_devreqs_inspect(): void
+{
+    $user = qly_auth_user();
+    if (!qly_can_inspect_req($user)) {
+        qly_forbidden('仅质量审核员、评审委员或管理员可验收');
+    }
+    $id = qly_input_int('id', 0);
+    $action = (string) qly_input('action', '');
+    $comment = trim((string) qly_input('comment', ''));
+    $attachments = qly_input('attachments', []);
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
+    if (!$row) {
+        qly_fail('需求不存在');
+    }
+    if ((string) $row['status'] !== '质量中心') {
+        qly_fail('该需求不在质量中心');
+    }
+    $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
+    $now = date('Y-m-d H:i:s');
+
+    if ($action === '通过') {
+        qly_update('dev_request', $id, [
+            'status' => '待发布',
+            'inspector_id' => (int) $user['id'],
+            'inspector_name' => $name,
+            'inspect_result' => '通过',
+            'inspect_comment' => $comment !== '' ? $comment : null,
+            'inspected_at' => $now,
+            'frontline_at' => $now,
+            'updated_at' => $now,
+        ]);
+        qly_log($user, '质量审核', (string) $row['req_no'], '质量验收通过：' . $row['title'] . '，进入待发布' . ($comment !== '' ? '，意见：' . mb_substr($comment, 0, 80) : ''));
+        // 通知评审委员与管理员执行发布
+        $publishers = qly_notify_user_ids_by_roles([QLY_ROLE_COMMITTEE, QLY_ROLE_ADMIN]);
+        $watchIds = array_values(array_unique(array_filter(array_merge(
+            [(int) ($row['pm_id'] ?? 0), (int) ($row['dev_leader_id'] ?? 0)],
+            $publishers
+        ))));
+        qly_notify($watchIds, '需求验收通过，待发布上线', '【' . $row['title'] . '】质量验收通过，请评审委员发布上线', '/dev/reqs/' . $id, (int) $user['id']);
+        qly_ok(null, '验收通过，需求进入待发布');
+    }
+
+    if ($action === '驳回') {
+        if (mb_strlen($comment) < 5) {
+            qly_fail('驳回原因至少 5 个字');
+        }
+        qly_update('dev_request', $id, [
+            'status' => '开发中心',
+            'inspector_id' => (int) $user['id'],
+            'inspector_name' => $name,
+            'inspect_result' => '驳回',
+            'inspect_comment' => $comment,
+            'inspected_at' => $now,
+            'reject_count' => (int) $row['reject_count'] + 1,
+            'updated_at' => $now,
+        ]);
+        qly_devreq_save_attachments($id, null, 'reject', $attachments, (int) $user['id']);
+        // 已完成子任务标记需返工，负责人重新提交完成
+        qly_exec(
+            "UPDATE `dev_sub_task` SET status = '需返工', updated_at = :now WHERE request_id = :rid AND status = '已完成'",
+            [':now' => $now, ':rid' => $id]
+        );
+        qly_log($user, '质量审核', (string) $row['req_no'], '质量驳回（第 ' . ((int) $row['reject_count'] + 1) . ' 次）：' . mb_substr($comment, 0, 80) . '，退回开发中心');
+        $assigneeRows = qly_all('SELECT DISTINCT assignee_id FROM `dev_sub_task` WHERE request_id = :rid', [':rid' => $id]);
+        $notifyIds = [(int) ($row['dev_leader_id'] ?? 0)];
+        foreach ($assigneeRows as $a) {
+            $notifyIds[] = (int) $a['assignee_id'];
+        }
+        $notifyIds = array_values(array_unique(array_filter($notifyIds)));
+        qly_notify($notifyIds, '质量驳回，退回开发中心', '【' . $row['title'] . '】驳回原因：' . mb_substr($comment, 0, 80), '/dev/reqs/' . $id, (int) $user['id']);
+        qly_ok(null, '已驳回，任务退回开发中心');
+    }
+
+    qly_fail('无效的验收操作');
+}
+
+/** 发布上线：评审委员/管理员 → 已上线（终态，进入上线功能展示墙） */
+function qly_api_devreqs_release(): void
+{
+    $user = qly_auth_user();
+    if (!qly_can_review_req($user)) {
+        qly_forbidden('仅评审委员或管理员可发布上线');
+    }
+    $id = qly_input_int('id', 0);
+    $comment = trim((string) qly_input('comment', ''));
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
+    if (!$row) {
+        qly_fail('需求不存在');
+    }
+    if ((string) $row['status'] !== '待发布') {
+        qly_fail('该需求不在待发布状态');
+    }
+    $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
+    $now = date('Y-m-d H:i:s');
+    qly_update('dev_request', $id, [
+        'status' => '已上线',
+        'released_at' => $now,
+        'released_by' => $name,
+        'updated_at' => $now,
+    ]);
+    qly_log($user, '需求发布', (string) $row['req_no'], '发布上线：' . $row['title'] . ($comment !== '' ? '，说明：' . mb_substr($comment, 0, 80) : ''));
+    $watchIds = array_values(array_unique(array_filter([
+        (int) $row['submitter_id'],
+        (int) ($row['pm_id'] ?? 0),
+        (int) ($row['dev_leader_id'] ?? 0),
+    ])));
+    qly_notify($watchIds, '您的需求已上线', '【' . $row['title'] . '】已正式发布上线，可在「上线功能」查看', '/dev/reqs/' . $id, (int) $user['id']);
+    qly_ok(null, '已发布，需求已上线');
+}
+
+/** 开发工程师候选（设计中心指定开发负责人 / 开发中心指派子任务用） */
+function qly_api_devreqs_devs(): void
+{
+    qly_auth_user();
+    $rows = qly_all(
+        "SELECT u.id, u.account, u.name, u.roles, d.name AS department_name
+           FROM `user` u LEFT JOIN `department` d ON d.id = u.department_id
+          WHERE u.status = 1 AND u.deleted_at IS NULL"
+    );
+    $items = [];
+    foreach ($rows as $r) {
+        if (qly_has_role($r, [QLY_ROLE_DEV])) {
+            $items[] = [
+                'id' => (int) $r['id'],
+                'account' => $r['account'],
+                'name' => $r['name'] !== '' ? (string) $r['name'] : (string) $r['account'],
+                'departmentName' => $r['department_name'] ?? null,
+            ];
+        }
+    }
+    usort($items, fn(array $a, array $b): int => strcmp($a['name'], $b['name']));
+    qly_ok($items);
+}
+
+/** 上线功能展示墙（全员可见的已上线成果） */
+function qly_api_devreqs_wall(): void
+{
+    qly_auth_user();
+    $rows = qly_all(
+        'SELECT i.*, d.name AS department_name,'
+        . ' (SELECT COUNT(*) FROM `dev_sub_task` s WHERE s.request_id = i.id) AS sub_total,'
+        . " (SELECT COUNT(*) FROM `dev_sub_task` s WHERE s.request_id = i.id AND s.status = '已完成') AS sub_done"
+        . ' FROM `dev_request` i LEFT JOIN `department` d ON d.id = i.department_id'
+        . " WHERE i.status = '已上线' ORDER BY i.released_at DESC, i.id DESC LIMIT 200"
+    );
+    qly_ok(array_map('qly_devreq_row_public', $rows));
+}
