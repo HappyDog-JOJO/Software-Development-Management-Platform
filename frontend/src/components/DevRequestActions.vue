@@ -3,6 +3,7 @@
  * 需求操作组件：按「角色 + 需求状态」动态渲染操作按钮与弹窗。
  * 列表页与详情页共用；操作成功后 emit('refresh') 让父级重新拉数据。
  * 覆盖动作：评审通过/驳回（驳回即作废）、取消、认领、提交设计、提交开发完成、发布上线。
+ * link：列表内传 true → 文字按钮（与各列表页操作列一致）；详情页不传 → 实心按钮。
  */
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -21,7 +22,7 @@ import { canDesignReq, canReviewReq, isAdmin } from '@/constants/user'
 import AttachmentUpload from '@/components/AttachmentUpload.vue'
 import type { Attachment, DevCandidate, DevRequest } from '@/types'
 
-const props = defineProps<{ req: DevRequest }>()
+const props = defineProps<{ req: DevRequest; link?: boolean }>()
 const emit = defineEmits<{ (e: 'refresh'): void }>()
 
 const auth = useAuthStore()
@@ -30,6 +31,22 @@ const admin = computed(() => isAdmin(auth.user?.roles))
 const isClaimer = computed(() => props.req.pmId !== null && props.req.pmId === auth.user?.id)
 const isDevLeader = computed(
   () => props.req.devLeaderId !== null && props.req.devLeaderId === auth.user?.id,
+)
+
+/**
+ * 按钮形态两套；颜色统一为系统约定：常规动作 primary、销毁性动作 danger。
+ * - 列表内（link=true）：文字按钮，同各列表页操作列的写法；
+ * - 详情页（不传 link）：实心按钮，同问题详情页操作区。
+ */
+const btnPrimary = computed(() =>
+  props.link
+    ? { link: true, type: 'primary' as const }
+    : { size: 'small' as const, type: 'primary' as const },
+)
+const btnDanger = computed(() =>
+  props.link
+    ? { link: true, type: 'danger' as const }
+    : { size: 'small' as const, type: 'danger' as const, plain: true },
 )
 
 /* —— 按钮显隐 —— */
@@ -263,27 +280,27 @@ async function onDesignSubmit(): Promise<void> {
 </script>
 
 <template>
-  <div v-if="hasActions" class="dev-actions">
+  <div v-if="hasActions" class="dev-actions" :class="{ 'dev-actions--link': link }">
     <!-- 评审池 -->
     <template v-if="showReview">
-      <el-button size="small" type="primary" :loading="busy" @click="onReviewPass">评审通过</el-button>
-      <el-button size="small" type="danger" plain @click="openReject">驳回</el-button>
+      <el-button v-bind="btnPrimary" :loading="busy" @click="onReviewPass">评审通过</el-button>
+      <el-button v-bind="btnDanger" @click="openReject">驳回</el-button>
     </template>
 
     <!-- 需求池 -->
-    <el-button v-if="showClaim" size="small" type="primary" :loading="busy" @click="onClaim">认领设计</el-button>
+    <el-button v-if="showClaim" v-bind="btnPrimary" :loading="busy" @click="onClaim">认领设计</el-button>
 
     <!-- 设计中心 -->
-    <el-button v-if="showDesign" size="small" type="primary" @click="openDesign">提交设计</el-button>
+    <el-button v-if="showDesign" v-bind="btnPrimary" @click="openDesign">提交设计</el-button>
 
     <!-- 开发中心 -->
-    <el-button v-if="showDevDone" size="small" type="primary" @click="openDevDone">提交开发完成</el-button>
+    <el-button v-if="showDevDone" v-bind="btnPrimary" @click="openDevDone">提交开发完成</el-button>
 
     <!-- 待发布 -->
-    <el-button v-if="showRelease" size="small" type="success" :loading="busy" @click="onRelease">执行发布</el-button>
+    <el-button v-if="showRelease" v-bind="btnPrimary" :loading="busy" @click="onRelease">执行发布</el-button>
 
     <!-- 取消 -->
-    <el-button v-if="showCancel" size="small" type="info" plain :loading="busy" @click="onCancel">取消需求</el-button>
+    <el-button v-if="showCancel" v-bind="btnDanger" :loading="busy" @click="onCancel">取消需求</el-button>
 
     <el-dialog
       v-model="dialogVisible"
@@ -376,6 +393,12 @@ async function onDesignSubmit(): Promise<void> {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+/* link 模式（列表内）：容器不参与布局，让按钮直接作为操作列的子项排布，
+   间距规则与各列表页操作列一致（间距由 .cell--actions 统一控制） */
+.dev-actions--link {
+  display: contents;
 }
 
 .dialog-atts {

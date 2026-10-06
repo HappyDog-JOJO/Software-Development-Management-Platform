@@ -1,25 +1,57 @@
 <script setup lang="ts">
 /**
- * 需求列表页（按环节复用，样式规范对齐问题列表页）。
+ * 需求列表页（按环节复用，样式与写法对齐问题列表页）。
  * stage 由路由 props 注入则按环节过滤；mine=true 时只看自己提交的。
  * - 顶部筛选：可折叠筛选面板（优先级 / 模块 / 状态 / 关键字）
+ * - 列宽拖动记忆（colw）+ 列配置（colcfg，显隐与顺序），与问题列表一致
  * - 需求池默认按优先级排序（紧急 > 高 > 中 > 低，同级按提交先后）
- * - 行内操作按角色与状态动态渲染，操作列固定在最右
+ * - 行内操作按角色与状态动态渲染（文字按钮），操作列固定在最右
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
 import { useDictStore } from '@/stores/dict'
 import { fetchDevRequests } from '@/api/devreq'
 import { DEV_PRIORITY_CLASS, DEV_PRIORITY_OPTIONS, DEV_STATUS_CLASS, DEV_STATUS_OPTIONS } from '@/constants/devreq'
 import DevRequestActions from '@/components/DevRequestActions.vue'
 import EmptyIllustration from '@/components/illustrations/EmptyIllustration.vue'
+import ColumnConfig from '@/components/ColumnConfig.vue'
 import { fmtDateTime } from '@/utils/format'
+import { useColumnWidths } from '@/composables/useColumnWidths'
+import { useColumnConfig } from '@/composables/useColumnConfig'
 import type { DevPriority, DevRequest, DevStatus } from '@/types'
 
 const props = defineProps<{ stage?: DevStatus; mine?: boolean }>()
 
-const auth = useAuthStore()
+/** 表格列宽记忆（按当前用户隔离，拖动后自动记住） */
+const colw = useColumnWidths('dev-reqs')
+
+/** 列配置（按当前用户隔离）：控制列的显隐与顺序 */
+const colcfg = useColumnConfig('dev-reqs')
+
+/**
+ * 列定义表：key → 渲染属性。
+ * 列宽记忆直接以列 key 为键（与 useColumnWidths 的列 prop 一一对应）。
+ */
+interface DevColDef {
+  label: string
+  width?: number
+  minWidth?: number
+  align?: 'left' | 'center' | 'right'
+  sortable?: boolean
+  overflow?: boolean
+}
+
+const DEV_COL_DEFS: Record<string, DevColDef> = {
+  reqNo: { label: '需求编号', width: 200 },
+  title: { label: '需求标题', minWidth: 180, overflow: true },
+  moduleName: { label: '模块', width: 80 },
+  priority: { label: '优先级', width: 78, align: 'center', sortable: true },
+  status: { label: '状态', width: 100, align: 'center' },
+  submitterName: { label: '提交人', width: 104 },
+  owner: { label: '当前担当', minWidth: 120 },
+  createdAt: { label: '提交时间', width: 150, sortable: true },
+}
+
 const dict = useDictStore()
 const router = useRouter()
 const route = useRoute()
@@ -30,6 +62,20 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(10)
 const showStatusColumn = computed(() => !props.stage)
+
+/** 按「列配置」的顺序与显隐生成实际渲染的列（阶段页不展示状态列） */
+const devColumns = computed(() =>
+  colcfg
+    .ordered()
+    .filter(
+      (c) =>
+        c.visible &&
+        DEV_COL_DEFS[c.key] &&
+        (c.key !== 'status' || showStatusColumn.value),
+    )
+    .map((c) => ({ key: c.key, ...DEV_COL_DEFS[c.key] })),
+)
+
 const stageLabel = computed(() => (props.mine ? '我的需求' : (props.stage ?? '全部需求')))
 const stageDesc = computed(() => {
   switch (props.stage) {
@@ -162,6 +208,18 @@ function ownerLabel(row: DevRequest): string {
 }
 
 onMounted(() => {
+  // 登记可配置列（顺序即默认顺序；fixed 列不参与配置）
+  colcfg.register([
+    { key: 'reqNo', label: '需求编号' },
+    { key: 'title', label: '需求标题' },
+    { key: 'moduleName', label: '模块' },
+    { key: 'priority', label: '优先级' },
+    { key: 'status', label: '状态' },
+    { key: 'submitterName', label: '提交人' },
+    { key: 'owner', label: '当前担当' },
+    { key: 'createdAt', label: '提交时间' },
+    { key: '操作', label: '操作', fixed: true },
+  ])
   void dict.load()
   void load()
 })
@@ -250,12 +308,14 @@ watch(
     <div class="moon-card moon-card--tight">
       <div class="toolbar toolbar--actions-only">
         <div class="toolbar__actions">
+          <ColumnConfig :config="colcfg" title="需求列表" />
           <el-button @click="load">刷新</el-button>
         </div>
       </div>
 
       <div class="moon-table">
         <el-table
+          @header-dragend="colw.onDragend"
           border
           stripe
           v-loading="loading"
@@ -267,62 +327,59 @@ watch(
             <EmptyIllustration :size="130" text="暂无需求数据" sub-text="可以调整筛选条件，或先去提交一条需求" />
           </template>
 
-          <el-table-column label="需求编号" width="165" prop="reqNo">
+          <!-- 列按「列配置」的顺序与显隐动态渲染，因此调整顺序能真正作用到表格。
+               注：操作列固定在最右，不参与配置。 -->
+          <el-table-column
+            v-for="c in devColumns"
+            :key="c.key"
+            :prop="c.key"
+            :label="c.label"
+            v-bind="colw.bind(c.key, c.width !== undefined ? { width: c.width } : { minWidth: c.minWidth })"
+            :align="c.align || 'left'"
+            :sortable="c.sortable ? 'custom' : false"
+            :show-overflow-tooltip="!!c.overflow"
+          >
             <template #default="{ row }">
-              <el-tooltip :content="row.reqNo" placement="top" effect="light" :show-after="200">
-                <span class="cell-code cell-nowrap">{{ row.reqNo }}</span>
-              </el-tooltip>
-            </template>
-          </el-table-column>
+              <template v-if="c.key === 'reqNo'">
+                <el-tooltip :content="row.reqNo" placement="top" effect="light" :show-after="200">
+                  <span class="cell-code cell-nowrap">{{ row.reqNo }}</span>
+                </el-tooltip>
+              </template>
 
-          <el-table-column label="需求标题" min-width="180" prop="title" show-overflow-tooltip>
-            <template #default="{ row }">
-              <a class="title-link" @click="goDetail(row)">{{ row.title }}</a>
-            </template>
-          </el-table-column>
+              <template v-else-if="c.key === 'title'">
+                <span class="cell-ellipsis">{{ row.title }}</span>
+              </template>
 
-          <el-table-column label="模块" width="80" prop="moduleName">
-            <template #default="{ row }">
-              <span class="cell-nowrap">{{ row.moduleName || '—' }}</span>
-            </template>
-          </el-table-column>
+              <template v-else-if="c.key === 'moduleName'">
+                <span class="cell-nowrap">{{ row.moduleName || '—' }}</span>
+              </template>
 
-          <el-table-column label="优先级" width="78" align="center" prop="priority" sortable="custom">
-            <template #default="{ row }">
-              <span :class="DEV_PRIORITY_CLASS[row.priority as keyof typeof DEV_PRIORITY_CLASS]">{{ row.priority }}</span>
-            </template>
-          </el-table-column>
+              <template v-else-if="c.key === 'priority'">
+                <span :class="DEV_PRIORITY_CLASS[row.priority as keyof typeof DEV_PRIORITY_CLASS]">{{ row.priority }}</span>
+              </template>
 
-          <el-table-column v-if="showStatusColumn" label="状态" width="100" align="center" prop="status">
-            <template #default="{ row }">
-              <span :class="DEV_STATUS_CLASS[row.status as keyof typeof DEV_STATUS_CLASS]">{{ row.status }}</span>
-            </template>
-          </el-table-column>
+              <template v-else-if="c.key === 'status'">
+                <span :class="DEV_STATUS_CLASS[row.status as keyof typeof DEV_STATUS_CLASS]">{{ row.status }}</span>
+              </template>
 
-          <el-table-column label="提交人" width="104" prop="submitterName">
-            <template #default="{ row }">
-              <div class="cell-stack">
-                <span class="cell-nowrap">{{ row.submitterName }}</span>
-                <span class="cell-stack__sub">{{ row.submitterDepartmentName || '未分配部门' }}</span>
-              </div>
-            </template>
-          </el-table-column>
+              <template v-else-if="c.key === 'submitterName'">
+                <div class="cell-stack">
+                  <span class="cell-nowrap">{{ row.submitterName }}</span>
+                  <span class="cell-stack__sub">{{ row.submitterDepartmentName || '未分配部门' }}</span>
+                </div>
+              </template>
 
-          <el-table-column label="当前担当" min-width="120" prop="updatedAt">
-            <template #default="{ row }">
-              <div class="cell-stack">
+              <template v-else-if="c.key === 'owner'">
                 <span class="cell-nowrap">{{ ownerLabel(row) }}</span>
-              </div>
+              </template>
+
+              <template v-else-if="c.key === 'createdAt'">
+                <span class="cell-nowrap">{{ fmtDateTime(row.createdAt) }}</span>
+              </template>
             </template>
           </el-table-column>
 
-          <el-table-column label="提交时间" width="150" prop="createdAt" sortable="custom">
-            <template #default="{ row }">
-              <span class="cell-nowrap">{{ fmtDateTime(row.createdAt) }}</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="操作" width="300" fixed="right" align="center">
+          <el-table-column label="操作" :width="colw.bind('操作', { width: 240 }).width" fixed="right" align="center">
             <template #default="{ row }">
               <div class="cell--actions">
                 <DevRequestActions :req="row" link @refresh="load" />
@@ -400,6 +457,7 @@ watch(
   white-space: nowrap;
 }
 
+/* 操作按钮：推到行尾 */
 .filter-inline__actions {
   margin-left: auto;
 }
@@ -410,14 +468,9 @@ watch(
   margin-top: 12px;
 }
 
-.title-link {
-  color: var(--color-primary);
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.title-link:hover {
-  text-decoration: underline;
+.cell-code {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .cell-stack {
@@ -434,8 +487,15 @@ watch(
   font-variant-numeric: tabular-nums;
 }
 
+/* 操作列详情按钮：与各列表页文字按钮写法一致 */
 .btn-action-detail {
   justify-content: center;
   padding: 0;
+}
+
+/* 操作列：组件按钮组（display:contents 后视觉上并入本行）与「详情」之间的间距，
+   与相邻文字按钮的 10px 间距保持一致（见 theme.css 的 link 按钮规则） */
+.cell--actions .dev-actions--link + .btn-action-detail {
+  margin-left: 10px;
 }
 </style>
