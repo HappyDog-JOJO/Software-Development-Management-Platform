@@ -5,9 +5,9 @@ declare(strict_types=1);
  * 需求管理模块：需求研发流接口。
  * 流程：需求提交 → 评审池（评审委员，驳回即作废）→ 需求池（产品经理认领）→
  *       设计中心（设计文档/分支/开发负责人）→ 开发中心（子任务，全部完成自动流转）→
- *       质量中心（验收，驳回退回开发中心）→ 待发布 → 发布上线（已上线，终态）。
+ *       待发布 → 发布上线（已上线，终态）。
  * 可见范围：评审委员/管理员全量；产品经理可见需求池与自己认领的；
- *           质量审核员可见质量中心/待发布；开发负责人/子任务负责人/提交人可见自己的。
+ *           开发负责人/子任务负责人/提交人可见自己的。
  * 方案见 docs/需求管理模块-需求方案.md。
  */
 
@@ -26,7 +26,7 @@ function qly_devreq_priorities(): array
 /** 主任务状态集合（与前端 DevStatus 常量保持一致） */
 function qly_devreq_statuses(): array
 {
-    return ['评审池', '需求池', '设计中心', '开发中心', '质量中心', '待发布', '已上线', '已驳回', '已取消'];
+    return ['评审池', '需求池', '设计中心', '开发中心', '待发布', '已上线', '已驳回', '已取消'];
 }
 
 /** 附件落库（scene：submit提交/design设计/reject驳回/done完成/release上线） */
@@ -517,8 +517,8 @@ function qly_api_devreqs_design(): void
     qly_ok(null, '设计已提交，任务进入开发中心');
 }
 
-/** 子任务全部完成 → 主任务自动进入质量中心 */
-function qly_devreq_auto_inspect(array $row, array $actor, int $subTotal = 0): void
+/** 子任务全部完成 → 主任务自动进入待发布（等评审委员发布上线） */
+function qly_devreq_auto_frontline(array $row, array $actor, int $subTotal = 0): void
 {
     $pending = (int) qly_val(
         "SELECT COUNT(*) FROM `dev_sub_task` WHERE request_id = :rid AND status <> '已完成'",
@@ -528,10 +528,10 @@ function qly_devreq_auto_inspect(array $row, array $actor, int $subTotal = 0): v
         return;
     }
     $now = date('Y-m-d H:i:s');
-    qly_update('dev_request', (int) $row['id'], ['status' => '质量中心', 'inspect_at' => $now, 'updated_at' => $now]);
-    qly_log($actor, '需求开发', (string) $row['req_no'], '全部子任务完成，自动进入质量中心待验收');
-    $inspectors = qly_notify_user_ids_by_roles([QLY_ROLE_INSPECTOR, QLY_ROLE_COMMITTEE, QLY_ROLE_ADMIN]);
-    qly_notify($inspectors, '需求待质量验收', '【' . $row['title'] . '】开发完成（共 ' . $subTotal . ' 个子任务），请验收', '/dev/reqs/' . $row['id'], (int) $actor['id']);
+    qly_update('dev_request', (int) $row['id'], ['status' => '待发布', 'frontline_at' => $now, 'updated_at' => $now]);
+    qly_log($actor, '需求开发', (string) $row['req_no'], '全部子任务完成，自动进入待发布');
+    $publishers = qly_notify_user_ids_by_roles([QLY_ROLE_COMMITTEE, QLY_ROLE_ADMIN]);
+    qly_notify($publishers, '需求开发完成，待发布上线', '【' . $row['title'] . '】开发完成（共 ' . $subTotal . ' 个子任务），请评审委员发布上线', '/dev/reqs/' . $row['id'], (int) $actor['id']);
 }
 
 /** 创建子任务（开发负责人或管理员；主任务须在开发中心） */
@@ -607,7 +607,7 @@ function qly_api_subtasks_start(): void
     qly_ok(null, '已开工');
 }
 
-/** 子任务提交完成（负责人；完成说明必填）→ 全部完成时父任务自动进质量中心 */
+/** 子任务提交完成（负责人；完成说明必填）→ 全部完成时父任务自动进待发布 */
 function qly_api_subtasks_done(): void
 {
     $user = qly_auth_user();
@@ -649,89 +649,12 @@ function qly_api_subtasks_done(): void
     $watchIds = array_values(array_unique(array_filter([(int) ($row['pm_id'] ?? 0), (int) ($row['dev_leader_id'] ?? 0)])));
     qly_notify($watchIds, '子任务进度 ' . $done . '/' . $total, '【' . $row['title'] . '】' . $sub['title'] . ' 已完成', '/dev/reqs/' . (int) $sub['request_id'], (int) $user['id']);
 
-    // 全部完成 → 父任务自动进入质量中心
-    qly_devreq_auto_inspect($row, $user, $total);
+    // 全部完成 → 父任务自动进入待发布
+    qly_devreq_auto_frontline($row, $user, $total);
     qly_ok(['done' => $done, 'total' => $total], '子任务已完成');
 }
 
-/** 质量验收：通过 → 待发布；驳回 → 退回开发中心（子任务标记需返工） */
-function qly_api_devreqs_inspect(): void
-{
-    $user = qly_auth_user();
-    if (!qly_can_inspect_req($user)) {
-        qly_forbidden('仅质量审核员、评审委员或管理员可验收');
-    }
-    $id = qly_input_int('id', 0);
-    $action = (string) qly_input('action', '');
-    $comment = trim((string) qly_input('comment', ''));
-    $attachments = qly_input('attachments', []);
-    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
-    if (!$row) {
-        qly_fail('需求不存在');
-    }
-    if ((string) $row['status'] !== '质量中心') {
-        qly_fail('该需求不在质量中心');
-    }
-    $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
-    $now = date('Y-m-d H:i:s');
-
-    if ($action === '通过') {
-        qly_update('dev_request', $id, [
-            'status' => '待发布',
-            'inspector_id' => (int) $user['id'],
-            'inspector_name' => $name,
-            'inspect_result' => '通过',
-            'inspect_comment' => $comment !== '' ? $comment : null,
-            'inspected_at' => $now,
-            'frontline_at' => $now,
-            'updated_at' => $now,
-        ]);
-        qly_log($user, '质量审核', (string) $row['req_no'], '质量验收通过：' . $row['title'] . '，进入待发布' . ($comment !== '' ? '，意见：' . mb_substr($comment, 0, 80) : ''));
-        // 通知评审委员与管理员执行发布
-        $publishers = qly_notify_user_ids_by_roles([QLY_ROLE_COMMITTEE, QLY_ROLE_ADMIN]);
-        $watchIds = array_values(array_unique(array_filter(array_merge(
-            [(int) ($row['pm_id'] ?? 0), (int) ($row['dev_leader_id'] ?? 0)],
-            $publishers
-        ))));
-        qly_notify($watchIds, '需求验收通过，待发布上线', '【' . $row['title'] . '】质量验收通过，请评审委员发布上线', '/dev/reqs/' . $id, (int) $user['id']);
-        qly_ok(null, '验收通过，需求进入待发布');
-    }
-
-    if ($action === '驳回') {
-        if (mb_strlen($comment) < 5) {
-            qly_fail('驳回原因至少 5 个字');
-        }
-        qly_update('dev_request', $id, [
-            'status' => '开发中心',
-            'inspector_id' => (int) $user['id'],
-            'inspector_name' => $name,
-            'inspect_result' => '驳回',
-            'inspect_comment' => $comment,
-            'inspected_at' => $now,
-            'reject_count' => (int) $row['reject_count'] + 1,
-            'updated_at' => $now,
-        ]);
-        qly_devreq_save_attachments($id, null, 'reject', $attachments, (int) $user['id']);
-        // 已完成子任务标记需返工，负责人重新提交完成
-        qly_exec(
-            "UPDATE `dev_sub_task` SET status = '需返工', updated_at = :now WHERE request_id = :rid AND status = '已完成'",
-            [':now' => $now, ':rid' => $id]
-        );
-        qly_log($user, '质量审核', (string) $row['req_no'], '质量驳回（第 ' . ((int) $row['reject_count'] + 1) . ' 次）：' . mb_substr($comment, 0, 80) . '，退回开发中心');
-        $assigneeRows = qly_all('SELECT DISTINCT assignee_id FROM `dev_sub_task` WHERE request_id = :rid', [':rid' => $id]);
-        $notifyIds = [(int) ($row['dev_leader_id'] ?? 0)];
-        foreach ($assigneeRows as $a) {
-            $notifyIds[] = (int) $a['assignee_id'];
-        }
-        $notifyIds = array_values(array_unique(array_filter($notifyIds)));
-        qly_notify($notifyIds, '质量驳回，退回开发中心', '【' . $row['title'] . '】驳回原因：' . mb_substr($comment, 0, 80), '/dev/reqs/' . $id, (int) $user['id']);
-        qly_ok(null, '已驳回，任务退回开发中心');
-    }
-
-    qly_fail('无效的验收操作');
-}
-
-/** 发布上线：评审委员/管理员 → 已上线（终态，进入上线功能展示墙） */
+/** 发布上线：评审委员/管理员 → 已上线（终态） */
 function qly_api_devreqs_release(): void
 {
     $user = qly_auth_user();
@@ -761,7 +684,7 @@ function qly_api_devreqs_release(): void
         (int) ($row['pm_id'] ?? 0),
         (int) ($row['dev_leader_id'] ?? 0),
     ])));
-    qly_notify($watchIds, '您的需求已上线', '【' . $row['title'] . '】已正式发布上线，可在「上线功能」查看', '/dev/reqs/' . $id, (int) $user['id']);
+    qly_notify($watchIds, '您的需求已上线', '【' . $row['title'] . '】已正式发布上线', '/dev/reqs/' . $id, (int) $user['id']);
     qly_ok(null, '已发布，需求已上线');
 }
 
@@ -787,18 +710,4 @@ function qly_api_devreqs_devs(): void
     }
     usort($items, fn(array $a, array $b): int => strcmp($a['name'], $b['name']));
     qly_ok($items);
-}
-
-/** 上线功能展示墙（全员可见的已上线成果） */
-function qly_api_devreqs_wall(): void
-{
-    qly_auth_user();
-    $rows = qly_all(
-        'SELECT i.*, d.name AS department_name,'
-        . ' (SELECT COUNT(*) FROM `dev_sub_task` s WHERE s.request_id = i.id) AS sub_total,'
-        . " (SELECT COUNT(*) FROM `dev_sub_task` s WHERE s.request_id = i.id AND s.status = '已完成') AS sub_done"
-        . ' FROM `dev_request` i LEFT JOIN `department` d ON d.id = i.department_id'
-        . " WHERE i.status = '已上线' ORDER BY i.released_at DESC, i.id DESC LIMIT 200"
-    );
-    qly_ok(array_map('qly_devreq_row_public', $rows));
 }

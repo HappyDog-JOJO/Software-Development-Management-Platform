@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 需求详情页：七站步骤条 + 全量信息 + 子任务开发面板 + 附件 + 时间线。
+ * 需求详情页：六站步骤条 + 全量信息 + 子任务开发面板 + 附件 + 时间线。
  * 操作按钮由 DevRequestActions 按角色与状态动态渲染；
  * 开发中心内由开发负责人创建子任务，子任务负责人开工/提交完成。
  */
@@ -30,7 +30,7 @@ const admin = computed(() => isAdmin(auth.user?.roles))
 const isLeader = computed(() => !!detail.value && detail.value.devLeaderId === myId.value)
 const canManageSubs = computed(() => isLeader.value || admin.value)
 
-/** 步骤条进度：正常状态按七站序号；已驳回停在评审池；已取消不展示步骤条 */
+/** 步骤条进度：正常状态按六站序号；已驳回停在评审池；已取消不展示步骤条 */
 const stepActive = computed(() => {
   if (!detail.value) return 0
   if (detail.value.status === '已驳回') return 0
@@ -159,7 +159,7 @@ async function onDoneSubmit(): Promise<void> {
       doneForm.attachments.map((a) => ({ url: a.url, name: a.name, size: a.size, mimeType: a.mimeType })),
     )
     if (res.done === res.total) {
-      ElMessage.success('全部子任务完成，任务自动进入质量中心')
+      ElMessage.success('全部子任务完成，任务自动进入待发布')
     } else {
       ElMessage.success(`子任务已完成（进度 ${res.done}/${res.total}）`)
     }
@@ -183,18 +183,6 @@ function canOperateSub(sub: DevSubTask): boolean {
   return admin.value || sub.assigneeId === myId.value
 }
 
-/** 开发中心横幅：最近一次质量驳回原因 */
-const rejectBanner = computed(() => {
-  if (!detail.value || detail.value.status !== '开发中心' || detail.value.inspectResult !== '驳回') {
-    return null
-  }
-  return {
-    comment: detail.value.inspectComment ?? '',
-    time: detail.value.inspectedAt,
-    count: detail.value.rejectCount,
-  }
-})
-
 onMounted(load)
 watch(reqId, load)
 </script>
@@ -213,21 +201,6 @@ watch(reqId, load)
         </div>
       </div>
       <el-alert v-else type="info" :closable="false" title="该需求已被提交人取消" style="margin-bottom: 14px" />
-
-      <!-- 开发中心：质量驳回横幅 -->
-      <el-alert
-        v-if="rejectBanner"
-        type="error"
-        :closable="false"
-        class="reject-banner"
-      >
-        <template #title>
-          质量驳回（累计 {{ rejectBanner.count }} 次）{{ rejectBanner.time ? ' · ' + fmtDateTime(rejectBanner.time) : '' }}：{{
-            rejectBanner.comment
-          }}
-        </template>
-        已完成的子任务已标记「需返工」，请按驳回原因修改后重新提交完成。
-      </el-alert>
 
       <!-- 基本信息 -->
       <div class="moon-card info-card">
@@ -282,16 +255,6 @@ watch(reqId, load)
           <div class="meta-item">
             <span class="meta-label">开发负责人</span>
             <span>{{ detail.devLeaderName || '—' }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">质量验收</span>
-            <span>
-              <template v-if="detail.inspectorName">
-                {{ detail.inspectorName }} · {{ detail.inspectResult }} · {{ fmtDateTime(detail.inspectedAt ?? '') }}
-                <em v-if="detail.inspectComment" class="meta-note">{{ detail.inspectComment }}</em>
-              </template>
-              <template v-else>未验收</template>
-            </span>
           </div>
           <div class="meta-item">
             <span class="meta-label">上线</span>
@@ -392,7 +355,7 @@ watch(reqId, load)
           <template #empty>尚未创建子任务</template>
         </el-table>
         <div v-else class="subs-empty">
-          {{ detail.status === '开发中心' ? (canManageSubs ? '请拆解开发子任务（需指定负责人），全部完成后自动进入质量中心' : '开发负责人正在拆解子任务') : '—' }}
+          {{ detail.status === '开发中心' ? (canManageSubs ? '请拆解开发子任务（需指定负责人），全部完成后自动进入待发布' : '开发负责人正在拆解子任务') : '—' }}
         </div>
       </div>
 
@@ -483,10 +446,6 @@ watch(reqId, load)
 .reject-hint {
   font-size: 12px;
   color: var(--color-danger, #c45656);
-}
-
-.reject-banner {
-  margin-bottom: 14px;
 }
 
 .info-card {

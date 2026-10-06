@@ -2,8 +2,8 @@
 
 import type { DevPriority, DevStatus, SubTaskStatus } from '@/types'
 
-/** 主流程七站（时间线顺序；已驳回/已取消为分支终态） */
-export const DEV_STAGES: DevStatus[] = ['评审池', '需求池', '设计中心', '开发中心', '质量中心', '待发布', '已上线']
+/** 主流程六站（时间线顺序；已驳回/已取消为分支终态） */
+export const DEV_STAGES: DevStatus[] = ['评审池', '需求池', '设计中心', '开发中心', '待发布', '已上线']
 
 /** 全部状态（列表筛选用） */
 export const DEV_STATUS_OPTIONS: DevStatus[] = [
@@ -11,7 +11,6 @@ export const DEV_STATUS_OPTIONS: DevStatus[] = [
   '需求池',
   '设计中心',
   '开发中心',
-  '质量中心',
   '待发布',
   '已上线',
   '已驳回',
@@ -24,7 +23,6 @@ export const DEV_STATUS_CLASS: Record<DevStatus, string> = {
   需求池: 'pill pill--primary',
   设计中心: 'pill pill--primary',
   开发中心: 'pill pill--pink',
-  质量中心: 'pill pill--yellow',
   待发布: 'pill pill--primary',
   已上线: 'pill pill--green',
   已驳回: 'pill pill--red',

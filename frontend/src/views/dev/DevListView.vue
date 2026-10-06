@@ -40,11 +40,9 @@ const stageDesc = computed(() => {
     case '设计中心':
       return '产品经理上传设计文档、指定开发分支与开发负责人。'
     case '开发中心':
-      return '开发负责人拆解子任务组织开发；全部子任务完成后自动进入质量中心。'
-    case '质量中心':
-      return '质量验收：不合格驳回退回开发中心返工，通过则进入待发布。'
+      return '开发负责人拆解子任务组织开发；全部子任务完成后自动进入待发布。'
     case '待发布':
-      return '质量验收通过待发布；评审委员执行发布后正式上线。'
+      return '开发完成的需求在此等待发布；评审委员执行发布后正式上线。'
     default:
       return '您提交的全部需求与最新进度。'
   }
@@ -152,8 +150,6 @@ function ownerLabel(row: DevRequest): string {
       return row.pmName ? `设计：${row.pmName}` : '待设计'
     case '开发中心':
       return row.devLeaderName ? `开发：${row.devLeaderName}` : '待开发'
-    case '质量中心':
-      return '待验收'
     case '待发布':
       return '待发布'
     case '已上线':
@@ -183,7 +179,7 @@ watch(
 watch(
   () => route.query,
   () => {
-    // 支持从展示墙等跳转带入状态筛选（仅「我的需求/全部」页生效）
+    // 支持跳转带入状态筛选（仅「我的需求」页生效）
     const q = route.query
     if (!props.stage && q.status) {
       filters.status = String(q.status) as DevStatus
@@ -282,14 +278,6 @@ watch(
           <el-table-column label="需求标题" min-width="180" prop="title" show-overflow-tooltip>
             <template #default="{ row }">
               <a class="title-link" @click="goDetail(row)">{{ row.title }}</a>
-              <el-tag
-                v-if="row.status === '开发中心' && row.inspectResult === '驳回'"
-                type="danger"
-                size="small"
-                effect="plain"
-                :title="`驳回原因：${row.inspectComment || ''}`"
-                style="margin-left: 6px"
-              >质量驳回×{{ row.rejectCount }}</el-tag>
             </template>
           </el-table-column>
 

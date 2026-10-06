@@ -342,15 +342,9 @@ function qly_can_dev_req(array $user): bool
     return qly_has_role($user, [QLY_ROLE_DEV, QLY_ROLE_ADMIN]);
 }
 
-/** 质量验收：质量审核员 / 评审委员 / 管理员 */
-function qly_can_inspect_req(array $user): bool
-{
-    return qly_has_role($user, [QLY_ROLE_INSPECTOR, QLY_ROLE_COMMITTEE, QLY_ROLE_ADMIN]);
-}
-
 /** 需求单条可见范围（与 qly_devreq_scope_where 保持同源）：
  * 评审委员/管理员全量；产品经理可见需求池全部 + 自己认领的；
- * 质量审核员可见质量中心/待发布的；开发工程师可见自己负责的主任务/子任务；提交人可见自己的。 */
+ * 开发工程师可见自己负责的主任务/子任务；提交人可见自己的。 */
 function qly_devreq_visible(array $user, array $r): bool
 {
     $roles = qly_parse_roles(isset($user['roles']) ? (string) $user['roles'] : null);
@@ -370,10 +364,7 @@ function qly_devreq_visible(array $user, array $r): bool
     if (in_array(QLY_ROLE_PM, $roles, true) && (string) ($r['status'] ?? '') === '需求池') {
         return true;
     }
-    if (in_array(QLY_ROLE_INSPECTOR, $roles, true) && in_array((string) ($r['status'] ?? ''), ['质量中心', '待发布'], true)) {
-        return true;
-    }
-    // 已上线的成果对全员可见（上线功能展示墙）
+    // 已上线的成果对全员可见
     if ((string) ($r['status'] ?? '') === '已上线') {
         return true;
     }
@@ -398,7 +389,6 @@ function qly_devreq_scope_where(array $user, string $alias = 'i'): array
     }
     $uid = (int) ($user['id'] ?? 0);
     $isPm = in_array(QLY_ROLE_PM, $roles, true);
-    $isInspector = in_array(QLY_ROLE_INSPECTOR, $roles, true);
     // PDO 原生预处理（EMULATE_PREPARES=false）不允许同名占位符重复，每个条件独立编号
     $conds = [
         "{$alias}.submitter_id = :__dv_u1",
@@ -408,9 +398,6 @@ function qly_devreq_scope_where(array $user, string $alias = 'i'): array
     ];
     if ($isPm) {
         $conds[] = "{$alias}.status = '需求池'";
-    }
-    if ($isInspector) {
-        $conds[] = "{$alias}.status IN ('质量中心', '待发布')";
     }
     // 已上线的成果（已上线）对全员可见
     $conds[] = "{$alias}.status = '已上线'";

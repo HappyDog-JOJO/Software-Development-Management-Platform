@@ -2,7 +2,7 @@
 /**
  * 需求操作组件：按「角色 + 需求状态」动态渲染操作按钮与弹窗。
  * 列表页与详情页共用；操作成功后 emit('refresh') 让父级重新拉数据。
- * 覆盖动作：评审通过/驳回（驳回即作废）、取消、认领、提交设计、质量通过/驳回、发布上线。
+ * 覆盖动作：评审通过/驳回（驳回即作废）、取消、认领、提交设计、发布上线。
  */
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -12,12 +12,11 @@ import {
   claimDevRequest,
   designDevRequest,
   fetchDevCandidates,
-  inspectDevRequest,
   releaseDevRequest,
   reviewDevRequest,
   type DevAttachmentPayload,
 } from '@/api/devreq'
-import { canDesignReq, canInspectReq, canReviewReq, isAdmin } from '@/constants/user'
+import { canDesignReq, canReviewReq, isAdmin } from '@/constants/user'
 import AttachmentUpload from '@/components/AttachmentUpload.vue'
 import type { Attachment, DevCandidate, DevRequest } from '@/types'
 
@@ -28,8 +27,6 @@ const auth = useAuthStore()
 
 const admin = computed(() => isAdmin(auth.user?.roles))
 const isClaimer = computed(() => props.req.pmId !== null && props.req.pmId === auth.user?.id)
-/** 驳回弹窗复用：'review' 评审驳回（作废）/ 'inspect' 质量驳回（退回开发中心） */
-const rejectMode = ref<'review' | 'inspect'>('review')
 
 /* —— 按钮显隐 —— */
 const showReview = computed(
@@ -44,9 +41,6 @@ const showDesign = computed(
     canDesignReq(auth.user?.roles) &&
     (admin.value || isClaimer.value),
 )
-const showInspect = computed(
-  () => props.req.status === '质量中心' && canInspectReq(auth.user?.roles),
-)
 const showRelease = computed(
   () => props.req.status === '待发布' && canReviewReq(auth.user?.roles),
 )
@@ -60,7 +54,6 @@ const hasActions = computed(
     showReview.value ||
     showClaim.value ||
     showDesign.value ||
-    showInspect.value ||
     showRelease.value ||
     showCancel.value,
 )
@@ -100,24 +93,8 @@ async function onClaim(): Promise<void> {
   }
 }
 
-async function onInspectPass(): Promise<void> {
-  await ElMessageBox.confirm(`确定验收通过「${props.req.title}」吗？通过后进入待发布，由评审委员发布上线。`, '质量验收通过', {
-    confirmButtonText: '通过',
-    cancelButtonText: '取消',
-    type: 'warning',
-  })
-  busy.value = true
-  try {
-    await inspectDevRequest(props.req.id, '通过')
-    ElMessage.success('验收通过，需求进入待发布')
-    emit('refresh')
-  } finally {
-    busy.value = false
-  }
-}
-
 async function onRelease(): Promise<void> {
-  await ElMessageBox.confirm(`确定把「${props.req.title}」发布上线吗？上线后将全员可见。`, '发布上线', {
+  await ElMessageBox.confirm(`确定把「${props.req.title}」发布上线吗？上线后需求进入终态。`, '发布上线', {
     confirmButtonText: '确认发布',
     cancelButtonText: '取消',
     type: 'warning',
@@ -156,11 +133,10 @@ const dialogKind = ref<'reject' | 'design'>('reject')
 const toPayload = (list: Attachment[]): DevAttachmentPayload[] =>
   list.map((a) => ({ url: a.url, name: a.name, size: a.size, mimeType: a.mimeType }))
 
-/* —— 驳回（评审/质量共用） —— */
+/* —— 驳回（评审驳回 = 作废） —— */
 const rejectForm = reactive({ comment: '', attachments: [] as Attachment[] })
 
-function openReject(mode: 'review' | 'inspect'): void {
-  rejectMode.value = mode
+function openReject(): void {
   rejectForm.comment = ''
   rejectForm.attachments = []
   dialogKind.value = 'reject'
@@ -183,14 +159,11 @@ async function onRejectSubmit(): Promise<void> {
   }
   submitting.value = true
   try {
-    const payload = { comment: rejectForm.comment.trim(), attachments: toPayload(rejectForm.attachments) }
-    if (rejectMode.value === 'review') {
-      await reviewDevRequest(props.req.id, '驳回', payload)
-      ElMessage.success('已驳回，该需求已作废')
-    } else {
-      await inspectDevRequest(props.req.id, '驳回', payload)
-      ElMessage.success('已驳回，任务退回开发中心')
-    }
+    await reviewDevRequest(props.req.id, '驳回', {
+      comment: rejectForm.comment.trim(),
+      attachments: toPayload(rejectForm.attachments),
+    })
+    ElMessage.success('已驳回，该需求已作废')
     dialogVisible.value = false
     emit('refresh')
   } finally {
@@ -258,7 +231,7 @@ async function onDesignSubmit(): Promise<void> {
     <!-- 评审池 -->
     <template v-if="showReview">
       <el-button size="small" type="primary" :loading="busy" @click="onReviewPass">评审通过</el-button>
-      <el-button size="small" type="danger" plain @click="openReject('review')">驳回</el-button>
+      <el-button size="small" type="danger" plain @click="openReject">驳回</el-button>
     </template>
 
     <!-- 需求池 -->
@@ -266,12 +239,6 @@ async function onDesignSubmit(): Promise<void> {
 
     <!-- 设计中心 -->
     <el-button v-if="showDesign" size="small" type="primary" @click="openDesign">提交设计</el-button>
-
-    <!-- 质量中心 -->
-    <template v-if="showInspect">
-      <el-button size="small" type="primary" :loading="busy" @click="onInspectPass">验收通过</el-button>
-      <el-button size="small" type="danger" plain @click="openReject('inspect')">驳回返工</el-button>
-    </template>
 
     <!-- 待发布 -->
     <el-button v-if="showRelease" size="small" type="success" :loading="busy" @click="onRelease">执行发布</el-button>
@@ -281,18 +248,13 @@ async function onDesignSubmit(): Promise<void> {
 
     <el-dialog
       v-model="dialogVisible"
-      :title="
-        dialogKind === 'design' ? '提交设计（设计中心 → 开发中心）'
-        : rejectMode === 'review' ? '评审驳回（作废）'
-        : '质量驳回（退回开发中心）'
-      "
+      :title="dialogKind === 'design' ? '提交设计（设计中心 → 开发中心）' : '评审驳回（作废）'"
       width="560px"
       destroy-on-close
     >
       <!-- 驳回表单 -->
       <template v-if="dialogKind === 'reject'">
         <el-alert
-          v-if="rejectMode === 'review'"
           type="warning"
           :closable="false"
           title="评审驳回后该需求将直接作废（终态），提交人如仍需要请重新提交新需求。"
@@ -304,7 +266,7 @@ async function onDesignSubmit(): Promise<void> {
           :rows="4"
           maxlength="500"
           show-word-limit
-          :placeholder="rejectMode === 'review' ? '请填写驳回原因，提交人会看到（至少 5 个字）' : '请填写驳回原因，开发负责人与子任务负责人会看到（至少 5 个字）'"
+          placeholder="请填写驳回原因，提交人会看到（至少 5 个字）"
         />
         <div class="dialog-atts">
           <AttachmentUpload v-model="rejectForm.attachments" :max="9" tip="选填，驳回说明附件，最多 9 个" />

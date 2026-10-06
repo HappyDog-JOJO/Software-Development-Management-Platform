@@ -69,9 +69,6 @@ export const DESIGN_REQ_ROLES: Role[] = [ROLE_PM, ROLE_ADMIN]
 /** 可开发作战（开发工程师 / 管理员） */
 export const DEV_REQ_ROLES: Role[] = [ROLE_DEV, ROLE_ADMIN]
 
-/** 可质量验收（质量审核员 / 评审委员 / 管理员） */
-export const INSPECT_REQ_ROLES: Role[] = [ROLE_INSPECTOR, ROLE_COMMITTEE, ROLE_ADMIN]
-
 /** 可评审需求 */
 export function canReviewReq(roles: Role[] | undefined): boolean {
   return hasAny(roles, REVIEW_REQ_ROLES)
@@ -85,11 +82,6 @@ export function canDesignReq(roles: Role[] | undefined): boolean {
 /** 可开发作战 */
 export function canDevReq(roles: Role[] | undefined): boolean {
   return hasAny(roles, DEV_REQ_ROLES)
-}
-
-/** 可质量验收 */
-export function canInspectReq(roles: Role[] | undefined): boolean {
-  return hasAny(roles, INSPECT_REQ_ROLES)
 }
 
 export function isAdmin(roles: Role[] | undefined): boolean {

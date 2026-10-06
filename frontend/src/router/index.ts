@@ -5,7 +5,6 @@ import {
   ROLE_ADMIN,
   ROLE_COMMITTEE,
   ROLE_DEV,
-  ROLE_INSPECTOR,
   ROLE_MANAGER,
   ROLE_PM,
   ROLE_SALES,
@@ -126,29 +125,11 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        path: 'dev/quality',
-        name: 'DevQuality',
-        component: () => import('@/views/dev/DevListView.vue'),
-        props: { stage: '质量中心' as DevStatus },
-        meta: {
-          title: '质量中心',
-          roles: [ROLE_INSPECTOR, ROLE_COMMITTEE, ROLE_ADMIN],
-          icon: 'quality',
-          group: '开发管理',
-        },
-      },
-      {
         path: 'dev/release',
         name: 'DevRelease',
         component: () => import('@/views/dev/DevListView.vue'),
         props: { stage: '待发布' as DevStatus },
         meta: { title: '发布上线', roles: [ROLE_COMMITTEE, ROLE_ADMIN], icon: 'release', group: '开发管理' },
-      },
-      {
-        path: 'dev/online',
-        name: 'DevOnline',
-        component: () => import('@/views/dev/DevOnlineView.vue'),
-        meta: { title: '上线功能', roles: [ROLE_SALES, ROLE_SERVICE, ROLE_MANAGER, ROLE_ADMIN], icon: 'online', group: '开发管理' },
       },
       {
         path: 'dev/reqs/:id',
@@ -238,9 +219,7 @@ export const MENU: MenuNode[] = [
   { path: '/dev/pool', title: '需求池', icon: 'pool', group: '开发管理', roles: [ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN] },
   { path: '/dev/design', title: '设计中心', icon: 'design', group: '开发管理', roles: [ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN] },
   { path: '/dev/battle', title: '开发中心', icon: 'battle', group: '开发管理', roles: [ROLE_DEV, ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN] },
-  { path: '/dev/quality', title: '质量中心', icon: 'quality', group: '开发管理', roles: [ROLE_INSPECTOR, ROLE_COMMITTEE, ROLE_ADMIN] },
   { path: '/dev/release', title: '发布上线', icon: 'release', group: '开发管理', roles: [ROLE_COMMITTEE, ROLE_ADMIN] },
-  { path: '/dev/online', title: '上线功能', icon: 'online', group: '开发管理', roles: [ROLE_SALES, ROLE_SERVICE, ROLE_MANAGER, ROLE_ADMIN] },
   // 系统管理（固定在最下）
   { path: '/duty', title: '值班排班', icon: 'duty', group: '系统管理', roles: [ROLE_ADMIN] },
   { path: '/system/notices', title: '公告管理', icon: 'notice', group: '系统管理', roles: [ROLE_ADMIN] },

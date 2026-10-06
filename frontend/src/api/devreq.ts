@@ -70,15 +70,6 @@ export function designDevRequest(id: number, payload: DesignPayload): Promise<nu
   return http.post<null>('/api.php?r=devreqs/design', { id, ...payload })
 }
 
-/** 质量验收：action = 通过（→ 待发布）| 驳回（→ 退回开发中心） */
-export function inspectDevRequest(
-  id: number,
-  action: '通过' | '驳回',
-  payload: { comment?: string; attachments?: DevAttachmentPayload[] } = {},
-): Promise<null> {
-  return http.post<null>('/api.php?r=devreqs/inspect', { id, action, ...payload })
-}
-
 /** 发布上线（评审委员/管理员）：待发布 → 已上线 */
 export function releaseDevRequest(id: number, comment = ''): Promise<null> {
   return http.post<null>('/api.php?r=devreqs/release', { id, comment })
@@ -87,11 +78,6 @@ export function releaseDevRequest(id: number, comment = ''): Promise<null> {
 /** 开发工程师候选（指定开发负责人/子任务负责人） */
 export function fetchDevCandidates(): Promise<DevCandidate[]> {
   return http.get<DevCandidate[]>('/api.php?r=devreqs/devs')
-}
-
-/** 上线功能展示墙（全员） */
-export function fetchDevWall(): Promise<DevRequest[]> {
-  return http.get<DevRequest[]>('/api.php?r=devreqs/wall')
 }
 
 /** 创建子任务（开发负责人；分支自动继承主任务） */
@@ -109,7 +95,7 @@ export function startSubTask(id: number): Promise<null> {
   return http.post<null>('/api.php?r=subtasks/start', { id })
 }
 
-/** 子任务提交完成（全部完成时父任务自动进质量中心） */
+/** 子任务提交完成（全部完成时父任务自动进待发布） */
 export function doneSubTask(
   id: number,
   doneNote: string,
