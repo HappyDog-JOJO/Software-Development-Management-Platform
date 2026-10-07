@@ -310,6 +310,7 @@ async function onDesignSubmit(): Promise<void> {
         : '评审驳回（作废）'
       "
       width="560px"
+      append-to-body
       destroy-on-close
     >
       <!-- 驳回表单 -->
