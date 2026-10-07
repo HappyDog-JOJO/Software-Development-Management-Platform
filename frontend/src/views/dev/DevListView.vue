@@ -387,11 +387,11 @@ watch(
             </template>
           </el-table-column>
 
-          <el-table-column label="操作" :width="colw.bind('操作', { width: 240 }).width" fixed="right" align="center">
+          <!-- 操作列：编号列可点击进详情，不再重复放「详情」按钮 -->
+          <el-table-column label="操作" :width="colw.bind('操作', { width: 220 }).width" fixed="right" align="center">
             <template #default="{ row }">
               <div class="cell--actions">
                 <DevRequestActions :req="row" link @refresh="load" />
-                <el-button link type="primary" class="btn-action-detail" @click="goDetail(row)">详情</el-button>
               </div>
             </template>
           </el-table-column>
@@ -479,17 +479,5 @@ watch(
 .cell-code {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-/* 操作列详情按钮：与各列表页文字按钮写法一致 */
-.btn-action-detail {
-  justify-content: center;
-  padding: 0;
-}
-
-/* 操作列：组件按钮组（display:contents 后视觉上并入本行）与「详情」之间的间距，
-   与相邻文字按钮的 10px 间距保持一致（见 theme.css 的 link 按钮规则） */
-.cell--actions .dev-actions--link + .btn-action-detail {
-  margin-left: 10px;
 }
 </style>

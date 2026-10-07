@@ -307,8 +307,71 @@ function qly_api_devreqs_create(): void
     qly_ok(['id' => $id, 'reqNo' => $reqNo], '需求已提交，等待评审委员会评审');
 }
 
-/** 取消需求（提交人本人或管理员；仅评审池/需求池阶段） */
-function qly_api_devreqs_cancel(): void
+/** 修改需求（提交人本人改自己的 / 管理员改全部；仅评审池阶段，评审开始后不可改） */
+function qly_api_devreqs_update(): void
+{
+    $user = qly_auth_user();
+    $id = qly_input_int('id', 0);
+    $title = trim((string) qly_input('title', ''));
+    $description = (string) qly_input('description', '');
+    $moduleId = qly_input_int('moduleId', 0);
+    $priority = (string) qly_input('priority', '中');
+    $attachments = qly_input('attachments', []);
+
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
+    if (!$row) {
+        qly_fail('需求不存在');
+    }
+    $isAdmin = qly_has_role($user, [QLY_ROLE_ADMIN]);
+    if (!$isAdmin && (int) $row['submitter_id'] !== (int) $user['id']) {
+        qly_forbidden('仅提交人本人可修改需求');
+    }
+    if ((string) $row['status'] !== '评审池') {
+        qly_fail('需求已进入评审，不可修改');
+    }
+    if (mb_strlen($title) < 4) {
+        qly_fail('需求标题至少 4 个字');
+    }
+    if (trim($description) === '') {
+        qly_fail('请填写需求描述');
+    }
+    if ($moduleId <= 0) {
+        qly_fail('请选择所属模块');
+    }
+    $module = qly_one('SELECT * FROM `dict_item` WHERE id = :id AND type = :t', [':id' => $moduleId, ':t' => 'module']);
+    if (!$module) {
+        qly_fail('所属模块不存在');
+    }
+    if ((int) $module['status'] !== 1) {
+        qly_fail('该模块已停用，请选择其他模块');
+    }
+    if (!in_array($priority, qly_devreq_priorities(), true)) {
+        $priority = '中';
+    }
+    if (is_array($attachments) && count($attachments) > 9) {
+        qly_fail('附件最多 9 个');
+    }
+
+    $now = date('Y-m-d H:i:s');
+    qly_update('dev_request', $id, [
+        'title' => $title,
+        'description' => $description,
+        'module_id' => $moduleId,
+        'module_name' => (string) $module['name'],
+        'priority' => $priority,
+        'updated_at' => $now,
+    ]);
+    // 提交附件整体替换：仅在请求携带 attachments 数组时执行（回填失败时前端不传，保持原附件不动）
+    if (is_array($attachments)) {
+        qly_exec('DELETE FROM `dev_request_attachment` WHERE request_id = :rid AND scene = :sc', [':rid' => $id, ':sc' => 'submit']);
+        qly_devreq_save_attachments($id, 'submit', $attachments, (int) $user['id']);
+    }
+    qly_log($user, '提交需求', (string) $row['req_no'], '修改需求：' . $title . '（评审前修改）');
+    qly_ok(null, '需求已修改');
+}
+
+/** 删除需求（提交人本人删自己的 / 管理员删全部；仅评审池阶段）。连同附件记录与落盘文件一起删除 */
+function qly_api_devreqs_delete(): void
 {
     $user = qly_auth_user();
     $id = qly_input_int('id', 0);
@@ -318,14 +381,47 @@ function qly_api_devreqs_cancel(): void
     }
     $isAdmin = qly_has_role($user, [QLY_ROLE_ADMIN]);
     if (!$isAdmin && (int) $row['submitter_id'] !== (int) $user['id']) {
-        qly_forbidden('仅提交人本人可取消需求');
+        qly_forbidden('仅提交人本人可删除需求');
     }
-    if (!in_array((string) $row['status'], ['评审池', '需求池'], true)) {
-        qly_fail('当前阶段不可取消（仅评审池/需求池可取消）');
+    if ((string) $row['status'] !== '评审池') {
+        qly_fail('需求已进入评审，不可删除');
     }
-    qly_update('dev_request', $id, ['status' => '已取消', 'updated_at' => date('Y-m-d H:i:s')]);
-    qly_log($user, '需求评审', (string) $row['req_no'], '取消需求：' . $row['title'] . '（阶段：' . $row['status'] . '）');
-    qly_ok(null, '需求已取消');
+
+    // 先收集待删除的上传文件路径（数据库删掉后就查不到了）
+    $files = [];
+    foreach (qly_all('SELECT url FROM `dev_request_attachment` WHERE request_id = :rid', [':rid' => $id]) as $r) {
+        $files[] = (string) $r['url'];
+    }
+
+    $pdo = qly_db();
+    $pdo->beginTransaction();
+    try {
+        qly_exec('DELETE FROM `dev_request_attachment` WHERE request_id = :rid', [':rid' => $id]);
+        qly_exec('DELETE FROM `dev_request` WHERE id = :id', [':id' => $id]);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        $pdo->rollBack();
+        qly_fail('删除失败，请重试');
+    }
+
+    // 落盘文件清理：只删本站 uploads 目录下的文件，失败不影响主流程（与问题删除同规则）
+    $uploadRoot = realpath((string) qly_app_config()['upload_dir']);
+    if ($uploadRoot !== false) {
+        foreach (array_unique($files) as $url) {
+            $rel = parse_url($url, PHP_URL_PATH);
+            if (!is_string($rel) || strpos($rel, '/uploads/') !== 0) {
+                continue;
+            }
+            $path = realpath($uploadRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, substr($rel, strlen('/uploads/'))));
+            // 路径必须落在 uploads 目录内，防止 ../ 穿越
+            if ($path !== false && strpos($path, $uploadRoot) === 0 && is_file($path)) {
+                @unlink($path);
+            }
+        }
+    }
+
+    qly_log($user, '提交需求', (string) $row['req_no'], '删除需求（评审前）：' . $row['title']);
+    qly_ok(null, '需求已删除');
 }
 
 /** 评审：评审委员 通过→需求池 / 驳回→直接作废（终态，不可重提） */

@@ -2,23 +2,28 @@
 /**
  * 需求操作组件：按「角色 + 需求状态」动态渲染操作按钮与弹窗。
  * 列表页与详情页共用；操作成功后 emit('refresh') 让父级重新拉数据。
- * 覆盖动作：评审通过/驳回（驳回即作废）、取消、认领、提交设计、提交开发完成、发布上线。
+ * 覆盖动作：评审通过/驳回（驳回即作废）、认领、提交设计、提交开发完成、发布上线、
+ *           修改/删除（提交人本人或管理员，仅评审池阶段；取消功能已由删除取代）。
  * link：列表内传 true → 文字按钮（与各列表页操作列一致）；详情页不传 → 实心按钮。
  */
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { useDictStore } from '@/stores/dict'
 import {
-  cancelDevRequest,
   claimDevRequest,
+  deleteDevRequest,
   designDevRequest,
   devDoneDevRequest,
   fetchDevCandidates,
+  getDevRequest,
   releaseDevRequest,
   reviewDevRequest,
+  updateDevRequest,
   type DevAttachmentPayload,
 } from '@/api/devreq'
 import { canDesignReq, canReviewReq, isAdmin } from '@/constants/user'
+import { DEV_PRIORITY_OPTIONS } from '@/constants/devreq'
 import AttachmentUpload from '@/components/AttachmentUpload.vue'
 import type { Attachment, DevCandidate, DevRequest } from '@/types'
 
@@ -26,12 +31,14 @@ const props = defineProps<{ req: DevRequest; link?: boolean }>()
 const emit = defineEmits<{ (e: 'refresh'): void }>()
 
 const auth = useAuthStore()
+const dict = useDictStore()
 
 const admin = computed(() => isAdmin(auth.user?.roles))
 const isClaimer = computed(() => props.req.pmId !== null && props.req.pmId === auth.user?.id)
 const isDevLeader = computed(
   () => props.req.devLeaderId !== null && props.req.devLeaderId === auth.user?.id,
 )
+const isSubmitter = computed(() => props.req.submitterId === auth.user?.id)
 
 /**
  * 按钮形态两套；颜色统一为系统约定：常规动作 primary、销毁性动作 danger。
@@ -68,11 +75,11 @@ const showDevDone = computed(
 const showRelease = computed(
   () => props.req.status === '待发布' && canReviewReq(auth.user?.roles),
 )
-const showCancel = computed(
-  () =>
-    ['评审池', '需求池'].includes(props.req.status) &&
-    (props.req.submitterId === auth.user?.id || admin.value),
+/** 修改/删除：提交人本人（自己的）/ 管理员（全部），仅评审池阶段（评审开始后不可改删） */
+const showEdit = computed(
+  () => props.req.status === '评审池' && (admin.value || isSubmitter.value),
 )
+const showDelete = showEdit
 const hasActions = computed(
   () =>
     showReview.value ||
@@ -80,7 +87,7 @@ const hasActions = computed(
     showDesign.value ||
     showDevDone.value ||
     showRelease.value ||
-    showCancel.value,
+    showEdit.value,
 )
 
 /* —— 简单确认类动作 —— */
@@ -134,16 +141,16 @@ async function onRelease(): Promise<void> {
   }
 }
 
-async function onCancel(): Promise<void> {
-  await ElMessageBox.confirm('取消后需求将终止流转，确定取消吗？', '取消需求', {
-    confirmButtonText: '确定取消',
-    cancelButtonText: '再想想',
-    type: 'warning',
-  })
+async function onDelete(): Promise<void> {
+  await ElMessageBox.confirm(
+    `确定删除需求「${props.req.title}」吗？附件会一并删除，且无法恢复。`,
+    '删除需求',
+    { confirmButtonText: '确定删除', cancelButtonText: '再想想', type: 'warning' },
+  )
   busy.value = true
   try {
-    await cancelDevRequest(props.req.id)
-    ElMessage.success('需求已取消')
+    await deleteDevRequest(props.req.id)
+    ElMessage.success('需求已删除')
     emit('refresh')
   } finally {
     busy.value = false
@@ -153,10 +160,82 @@ async function onCancel(): Promise<void> {
 /* —— 弹窗通用 —— */
 const dialogVisible = ref(false)
 const submitting = ref(false)
-/** 当前打开的弹窗：驳回 / 提交设计 / 提交开发完成 */
-const dialogKind = ref<'reject' | 'design' | 'devdone'>('reject')
+/** 当前打开的弹窗：修改 / 驳回 / 提交设计 / 提交开发完成 */
+const dialogKind = ref<'edit' | 'reject' | 'design' | 'devdone'>('reject')
 const toPayload = (list: Attachment[]): DevAttachmentPayload[] =>
   list.map((a) => ({ url: a.url, name: a.name, size: a.size, mimeType: a.mimeType }))
+
+/* —— 修改需求（评审前；表单与需求提交页一致，附件回填原提交附件） —— */
+const editForm = reactive({
+  title: '',
+  moduleId: undefined as number | undefined,
+  priority: '中',
+  description: '',
+  attachments: [] as Attachment[],
+})
+/** 编辑期间模块字典停用了原模块时，仍要能显示原模块名 */
+const editModuleFallback = ref('')
+/** 原提交附件是否已回填：回填失败时提交不带 attachments，后端保持原附件不动 */
+const editAttsLoaded = ref(true)
+
+function openEdit(): void {
+  editForm.title = props.req.title
+  editForm.moduleId = props.req.moduleId ?? undefined
+  editForm.priority = props.req.priority
+  editForm.description = props.req.description
+  editForm.attachments = []
+  editModuleFallback.value = props.req.moduleName || ''
+  dialogKind.value = 'edit'
+  dialogVisible.value = true
+  void dict.load()
+  // 回填原提交附件（列表接口不带附件明细，按需拉详情）
+  editAttsLoaded.value = false
+  void getDevRequest(props.req.id)
+    .then((detail) => {
+      if (dialogKind.value !== 'edit' || !dialogVisible.value) {
+        return
+      }
+      editForm.attachments = detail.attachments
+        .filter((a) => a.scene === 'submit')
+        .map((a) => ({ id: a.id, url: a.url, name: a.name, size: a.size, mimeType: a.mimeType }))
+      editAttsLoaded.value = true
+    })
+    .catch(() => {
+      // 拉取失败：保持未回填，提交时不带 attachments，原附件不会被误删
+      editAttsLoaded.value = false
+    })
+}
+
+async function onEditSubmit(): Promise<void> {
+  if (editForm.title.trim().length < 4) {
+    ElMessage.warning('需求标题至少 4 个字')
+    return
+  }
+  if (!editForm.moduleId) {
+    ElMessage.warning('请选择所属模块')
+    return
+  }
+  if (!editForm.description.trim()) {
+    ElMessage.warning('请填写需求描述')
+    return
+  }
+  submitting.value = true
+  try {
+    await updateDevRequest(props.req.id, {
+      title: editForm.title.trim(),
+      description: editForm.description.trim(),
+      moduleId: editForm.moduleId,
+      priority: editForm.priority,
+      // 回填失败时不传 attachments，后端保持原附件不动
+      attachments: editAttsLoaded.value ? toPayload(editForm.attachments) : undefined,
+    })
+    ElMessage.success('需求已修改')
+    dialogVisible.value = false
+    emit('refresh')
+  } finally {
+    submitting.value = false
+  }
+}
 
 /* —— 驳回（评审驳回 = 作废） —— */
 const rejectForm = reactive({ comment: '', attachments: [] as Attachment[] })
@@ -170,7 +249,9 @@ function openReject(): void {
 
 /** 弹窗确定按钮统一分发 */
 function onDialogSubmit(): void {
-  if (dialogKind.value === 'reject') {
+  if (dialogKind.value === 'edit') {
+    void onEditSubmit()
+  } else if (dialogKind.value === 'reject') {
     void onRejectSubmit()
   } else if (dialogKind.value === 'design') {
     void onDesignSubmit()
@@ -299,13 +380,15 @@ async function onDesignSubmit(): Promise<void> {
     <!-- 待发布 -->
     <el-button v-if="showRelease" v-bind="btnPrimary" :loading="busy" @click="onRelease">执行发布</el-button>
 
-    <!-- 取消 -->
-    <el-button v-if="showCancel" v-bind="btnDanger" :loading="busy" @click="onCancel">取消需求</el-button>
+    <!-- 修改 / 删除（评审前；提交人本人或管理员） -->
+    <el-button v-if="showEdit" v-bind="btnPrimary" @click="openEdit">修改</el-button>
+    <el-button v-if="showDelete" v-bind="btnDanger" :loading="busy" @click="onDelete">删除</el-button>
 
     <el-dialog
       v-model="dialogVisible"
       :title="
-        dialogKind === 'design' ? '提交设计（设计中心 → 开发中心）'
+        dialogKind === 'edit' ? '修改需求（评审前）'
+        : dialogKind === 'design' ? '提交设计（设计中心 → 开发中心）'
         : dialogKind === 'devdone' ? '提交开发完成（开发中心 → 待发布）'
         : '评审驳回（作废）'
       "
@@ -313,8 +396,46 @@ async function onDesignSubmit(): Promise<void> {
       append-to-body
       destroy-on-close
     >
+      <!-- 修改表单（与需求提交页一致） -->
+      <template v-if="dialogKind === 'edit'">
+        <el-form label-width="92px">
+          <el-form-item label="需求标题" required>
+            <el-input v-model="editForm.title" maxlength="100" show-word-limit placeholder="一句话说清要做什么" />
+          </el-form-item>
+          <el-form-item label="所属模块" required>
+            <el-select v-model="editForm.moduleId" placeholder="选择所属模块" style="width: 100%">
+              <el-option
+                v-for="it in dict.allOf('module')"
+                :key="it.id"
+                :label="it.name"
+                :value="it.id"
+              />
+            </el-select>
+            <div v-if="editModuleFallback && !editForm.moduleId" class="form-tip">原模块「{{ editModuleFallback }}」已不可选，请重新选择</div>
+          </el-form-item>
+          <el-form-item label="优先级" required>
+            <el-select v-model="editForm.priority" style="width: 100%">
+              <el-option v-for="p in DEV_PRIORITY_OPTIONS" :key="p" :label="p" :value="p" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="需求描述" required>
+            <el-input
+              v-model="editForm.description"
+              type="textarea"
+              :rows="6"
+              maxlength="1000"
+              show-word-limit
+              placeholder="请描述：业务背景、期望的功能效果、涉及的客户与场景、不做的影响"
+            />
+          </el-form-item>
+          <el-form-item label="附件">
+            <AttachmentUpload v-model="editForm.attachments" :max="9" tip="选填，需求材料/截图均可，最多 9 个，单个不超过 50MB" />
+          </el-form-item>
+        </el-form>
+      </template>
+
       <!-- 驳回表单 -->
-      <template v-if="dialogKind === 'reject'">
+      <template v-else-if="dialogKind === 'reject'">
         <el-alert
           type="warning"
           :closable="false"

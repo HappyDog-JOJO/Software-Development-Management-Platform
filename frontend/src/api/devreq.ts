@@ -38,8 +38,14 @@ export function createDevRequest(payload: CreateDevRequestPayload): Promise<{ id
   return http.post<{ id: number; reqNo: string }>('/api.php?r=devreqs/create', payload)
 }
 
-export function cancelDevRequest(id: number): Promise<null> {
-  return http.post<null>('/api.php?r=devreqs/cancel', { id })
+/** 修改需求（提交人本人/管理员；仅评审池阶段） */
+export function updateDevRequest(id: number, payload: CreateDevRequestPayload): Promise<null> {
+  return http.post<null>('/api.php?r=devreqs/update', { id, ...payload })
+}
+
+/** 删除需求（提交人本人删自己的/管理员删全部；仅评审池阶段） */
+export function deleteDevRequest(id: number): Promise<null> {
+  return http.post<null>('/api.php?r=devreqs/delete', { id })
 }
 
 /** 评审（评审委员）：action = 通过 | 驳回（驳回 = 作废终态） */
