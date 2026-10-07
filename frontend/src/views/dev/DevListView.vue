@@ -49,7 +49,7 @@ const DEV_COL_DEFS: Record<string, DevColDef> = {
   status: { label: '状态', width: 100, align: 'center' },
   submitterName: { label: '提交人', width: 96 },
   submitterDepartmentName: { label: '提交部门', width: 116 },
-  owner: { label: '当前担当', minWidth: 120 },
+  owner: { label: '处理人', minWidth: 120 },
   createdAt: { label: '提交时间', width: 150, sortable: true, align: 'center' },
 }
 
@@ -186,7 +186,7 @@ function goDetail(row: DevRequest): void {
   void router.push(`/dev/reqs/${row.id}`)
 }
 
-/** 环节 → 当前担当说明 */
+/** 环节 → 处理人说明：有专人负责时显示「角色：姓名」，等待接手或终态时显示环节状态 */
 function ownerLabel(row: DevRequest): string {
   switch (row.status) {
     case '评审池':
@@ -218,7 +218,7 @@ onMounted(() => {
     { key: 'status', label: '状态' },
     { key: 'submitterName', label: '提交人' },
     { key: 'submitterDepartmentName', label: '提交部门' },
-    { key: 'owner', label: '当前担当' },
+    { key: 'owner', label: '处理人' },
     { key: 'createdAt', label: '提交时间' },
     { key: '操作', label: '操作', fixed: true },
   ])
