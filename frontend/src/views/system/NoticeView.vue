@@ -43,7 +43,7 @@ const NOTICE_COL_DEFS: Record<string, NoticeColDef> = {
   title: { label: '标题', colwKey: 'title', width: 180 },
   content: { label: '公告内容', colwKey: 'content', minWidth: 320, overflow: true },
   publisherName: { label: '发布人', colwKey: 'publisherName', width: 100 },
-  createdAt: { label: '发布时间', colwKey: 'createdAt', width: 158 },
+  createdAt: { label: '发布时间', colwKey: 'createdAt', width: 158, align: 'center' },
   status: { label: '状态', colwKey: 'status', width: 92, align: 'center' },
 }
 

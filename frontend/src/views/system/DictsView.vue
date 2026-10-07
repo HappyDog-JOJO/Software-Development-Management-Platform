@@ -279,7 +279,7 @@ onMounted(async () => {
               <span :class="row.referenceCount > 0 ? 'num-strong' : 'text-placeholder'">{{ row.referenceCount }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="createdAt" label="创建时间" :width="colw.bind('createdAt', { width: 165 }).width">
+          <el-table-column prop="createdAt" label="创建时间" :width="colw.bind('createdAt', { width: 165 }).width" align="center">
             <template #default="{ row }">{{ fmtDateTime(row.createdAt) }}</template>
           </el-table-column>
           <el-table-column label="操作" :width="colw.bind('操作', { width: 208 }).width" fixed="right" align="center">

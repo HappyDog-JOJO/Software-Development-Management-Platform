@@ -50,7 +50,7 @@ const DEV_COL_DEFS: Record<string, DevColDef> = {
   submitterName: { label: '提交人', width: 96 },
   submitterDepartmentName: { label: '提交部门', width: 116 },
   owner: { label: '当前担当', minWidth: 120 },
-  createdAt: { label: '提交时间', width: 150, sortable: true },
+  createdAt: { label: '提交时间', width: 150, sortable: true, align: 'center' },
 }
 
 const dict = useDictStore()

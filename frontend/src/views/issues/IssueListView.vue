@@ -66,11 +66,11 @@ const ISSUE_COL_DEFS: Record<string, ColDef> = {
   categoryName: { label: '问题分类', colwKey: 'categoryName', width: 112 },
   description: { label: '问题描述', colwKey: 'description', width: 360, overflow: true },
   attachmentCount: { label: '附件', colwKey: 'attachmentCount', width: 78, align: 'center' },
-  createdAt: { label: '提交时间', colwKey: 'createdAt', width: 158, sortable: true },
+  createdAt: { label: '提交时间', colwKey: 'createdAt', width: 158, sortable: true, align: 'center' },
   status: { label: '问题状态', colwKey: 'status', width: 112, align: 'center' },
   valueName: { label: '问题价值', colwKey: 'valueName', width: 126, align: 'center' },
   handlerName: { label: '处理人', colwKey: 'handlerName', width: 100 },
-  handledAt: { label: '处理时间', colwKey: 'handledAt', width: 158, sortable: true },
+  handledAt: { label: '处理时间', colwKey: 'handledAt', width: 158, sortable: true, align: 'center' },
   handleRemark: { label: '处理备注', colwKey: '处理备注', width: 240, overflow: true },
 }
 
@@ -762,19 +762,6 @@ watch(
   color: var(--color-text-regular);
 }
 
-.cell-stack {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  line-height: 1.35;
-  gap: 2px;
-}
-
-.cell-stack--center {
-  align-items: center;
-}
-
-
 /* 操作列按钮：统一为文字（link）按钮，主操作固定宽度保证跨行对齐 */
 .btn-action-main {
   justify-content: center;
@@ -789,12 +776,6 @@ watch(
 .btn-action-detail {
   justify-content: center;
   padding: 0;
-}
-
-.cell-stack__sub {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  font-variant-numeric: tabular-nums;
 }
 
 /* 描述列：文本截断 + 附件数内联（避免占一整列） */

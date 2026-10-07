@@ -40,7 +40,7 @@ interface LogColDef {
 }
 
 const LOG_COL_DEFS: Record<string, LogColDef> = {
-  createdAt: { label: '时间', colwKey: 'createdAt', width: 118 },
+  createdAt: { label: '时间', colwKey: 'createdAt', width: 118, align: 'center' },
   account: { label: '操作人', colwKey: 'account', width: 106 },
   role: { label: '角色', colwKey: 'role', width: 132 },
   type: { label: '操作类型', colwKey: 'type', width: 110, align: 'center' },
@@ -258,5 +258,24 @@ onMounted(async () => {
   display: flex;
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+/* 时间列两行结构（日期 / 时刻），与用户管理等列表一致 */
+.cell-stack {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-stack__sub {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.cell-nowrap {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 </style>

@@ -50,7 +50,7 @@ const USER_COL_DEFS: Record<string, UserColDef> = {
   phone: { label: '联系电话', colwKey: 'phone', width: 122 },
   departmentName: { label: '所属部门', colwKey: 'departmentName', width: 104 },
   role: { label: '角色', colwKey: 'role', width: 182 },
-  createdAt: { label: '注册时间', colwKey: 'createdAt', width: 116, sortable: true },
+  createdAt: { label: '注册时间', colwKey: 'createdAt', width: 116, sortable: true, align: 'center' },
   status: { label: '状态', colwKey: '状态', width: 76, align: 'center' },
 }
 
@@ -424,7 +424,7 @@ onMounted(async () => {
               </template>
 
               <template v-else-if="c.key === 'createdAt'">
-                <span class="cell-stack">
+                <span class="cell-stack cell-stack--center">
                   <span class="cell-nowrap">{{ row.createdAt.slice(0, 10) }}</span>
                   <span class="cell-stack__sub cell-nowrap">{{ row.createdAt.slice(11, 16) }}</span>
                 </span>
@@ -583,6 +583,11 @@ onMounted(async () => {
   flex-direction: column;
   line-height: 1.3;
   font-variant-numeric: tabular-nums;
+}
+
+/* 时间列等居中单元格：两行结构整体居中 */
+.cell-stack--center {
+  align-items: center;
 }
 
 .cell-stack__sub {
