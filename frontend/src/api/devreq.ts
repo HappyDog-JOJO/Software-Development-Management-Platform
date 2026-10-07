@@ -49,9 +49,10 @@ export function deleteDevRequest(id: number): Promise<null> {
 }
 
 /** 评审（评审委员）：action = 通过 | 驳回（驳回 = 作废终态） */
+/** 评审（评审委员）：action = 通过（备注选填）| 待定（备注必填，暂留评审池）| 驳回（备注必填，作废终态） */
 export function reviewDevRequest(
   id: number,
-  action: '通过' | '驳回',
+  action: '通过' | '待定' | '驳回',
   payload: { comment?: string; attachments?: DevAttachmentPayload[] } = {},
 ): Promise<null> {
   return http.post<null>('/api.php?r=devreqs/review', { id, action, ...payload })

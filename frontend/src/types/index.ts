@@ -420,6 +420,8 @@ export interface DevRequest {
   reviewerName: string | null
   reviewComment: string | null
   reviewedAt: string | null
+  /** 评审待定：暂留评审池，之后仍可通过/驳回 */
+  reviewPending: boolean
   pmId: number | null
   pmName: string | null
   designDoc: string | null

@@ -377,8 +377,17 @@ watch(
                 <span class="cell-nowrap">{{ row.submitterDepartmentName || '未分配部门' }}</span>
               </template>
 
-              <template v-else-if="c.key === 'owner'">
-                <span class="cell-nowrap">{{ ownerLabel(row) }}</span>
+                            <template v-else-if="c.key === 'owner'">
+                <el-tooltip
+                  v-if="row.reviewPending"
+                  :content="`待定备注：${row.reviewComment || ''}`"
+                  placement="top"
+                  effect="light"
+                  :show-after="200"
+                >
+                  <span class="cell-nowrap owner-pending">待定</span>
+                </el-tooltip>
+                <span v-else class="cell-nowrap">{{ ownerLabel(row) }}</span>
               </template>
 
               <template v-else-if="c.key === 'createdAt'">
@@ -479,5 +488,12 @@ watch(
 .cell-code {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* 评审待定标记：黄色调（与状态胶囊 pill--yellow 同色系），tooltip 展示待定备注 */
+.owner-pending {
+  color: #9c6a17;
+  font-weight: 500;
+  cursor: help;
 }
 </style>

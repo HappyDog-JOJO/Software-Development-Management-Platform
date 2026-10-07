@@ -312,6 +312,7 @@ CREATE TABLE IF NOT EXISTS `dev_request` (
   `reviewer_name` VARCHAR(60) DEFAULT NULL COMMENT '评审人姓名',
   `review_comment` VARCHAR(500) DEFAULT NULL COMMENT '评审意见',
   `reviewed_at` DATETIME DEFAULT NULL COMMENT '最近评审时间',
+  `review_pending` TINYINT NOT NULL DEFAULT 0 COMMENT '评审待定标记：0否/1待定（待定暂留评审池，之后仍可通过/驳回）',
   `pm_id` INT UNSIGNED DEFAULT NULL COMMENT '认领的产品经理ID',
   `pm_name` VARCHAR(60) DEFAULT NULL COMMENT '产品经理姓名',
   `design_doc` TEXT COMMENT '设计说明',

@@ -2,8 +2,8 @@
 /**
  * 需求操作组件：按「角色 + 需求状态」动态渲染操作按钮与弹窗。
  * 列表页与详情页共用；操作成功后 emit('refresh') 让父级重新拉数据。
- * 覆盖动作：评审通过/驳回（驳回即作废）、认领、提交设计、提交开发完成、发布上线、
- *           修改/删除（提交人本人或管理员，仅评审池阶段；取消功能已由删除取代）。
+ * 覆盖动作：评审通过（备注选填）/ 待定（备注必填，暂留评审池）/ 驳回（备注必填，作废终态）、
+ *           认领、提交设计、提交开发完成、发布上线、修改/删除（提交人本人或管理员，仅评审池）。
  * link：列表内传 true → 文字按钮（与各列表页操作列一致）；详情页不传 → 实心按钮。
  */
 import { computed, reactive, ref } from 'vue'
@@ -237,10 +237,13 @@ async function onEditSubmit(): Promise<void> {
   }
 }
 
-/* —— 驳回（评审驳回 = 作废） —— */
+/* —— 驳回 / 待定（评审池；备注均必填。驳回=作废终态，待定=暂留评审池可再改判） —— */
 const rejectForm = reactive({ comment: '', attachments: [] as Attachment[] })
+/** 当前弹窗是评审驳回还是评审待定 */
+const rejectMode = ref<'reject' | 'pending'>('reject')
 
-function openReject(): void {
+function openReject(mode: 'reject' | 'pending'): void {
+  rejectMode.value = mode
   rejectForm.comment = ''
   rejectForm.attachments = []
   dialogKind.value = 'reject'
@@ -262,16 +265,21 @@ function onDialogSubmit(): void {
 
 async function onRejectSubmit(): Promise<void> {
   if (!rejectForm.comment.trim()) {
-    ElMessage.warning('请填写驳回原因')
+    ElMessage.warning(rejectMode.value === 'pending' ? '请填写待定备注' : '请填写驳回原因')
     return
   }
   submitting.value = true
   try {
-    await reviewDevRequest(props.req.id, '驳回', {
-      comment: rejectForm.comment.trim(),
-      attachments: toPayload(rejectForm.attachments),
-    })
-    ElMessage.success('已驳回，该需求已作废')
+    if (rejectMode.value === 'pending') {
+      await reviewDevRequest(props.req.id, '待定', { comment: rejectForm.comment.trim() })
+      ElMessage.success('已标记待定，需求保留在评审池')
+    } else {
+      await reviewDevRequest(props.req.id, '驳回', {
+        comment: rejectForm.comment.trim(),
+        attachments: toPayload(rejectForm.attachments),
+      })
+      ElMessage.success('已驳回，该需求已作废')
+    }
     dialogVisible.value = false
     emit('refresh')
   } finally {
@@ -362,10 +370,11 @@ async function onDesignSubmit(): Promise<void> {
 
 <template>
   <div v-if="hasActions" class="dev-actions" :class="{ 'dev-actions--link': link }">
-    <!-- 评审池 -->
+    <!-- 评审池：通过（备注选填）/ 待定（备注必填，暂留评审池）/ 驳回（备注必填，作废） -->
     <template v-if="showReview">
       <el-button v-bind="btnPrimary" :loading="busy" @click="onReviewPass">评审通过</el-button>
-      <el-button v-bind="btnDanger" @click="openReject">驳回</el-button>
+      <el-button v-bind="btnPrimary" @click="openReject('pending')">待定</el-button>
+      <el-button v-bind="btnDanger" @click="openReject('reject')">驳回</el-button>
     </template>
 
     <!-- 需求池 -->
@@ -390,6 +399,7 @@ async function onDesignSubmit(): Promise<void> {
         dialogKind === 'edit' ? '修改需求（评审前）'
         : dialogKind === 'design' ? '提交设计（设计中心 → 开发中心）'
         : dialogKind === 'devdone' ? '提交开发完成（开发中心 → 待发布）'
+        : rejectMode === 'pending' ? '评审待定（暂留评审池）'
         : '评审驳回（作废）'
       "
       width="560px"
@@ -434,12 +444,14 @@ async function onDesignSubmit(): Promise<void> {
         </el-form>
       </template>
 
-      <!-- 驳回表单 -->
+      <!-- 驳回 / 待定表单 -->
       <template v-else-if="dialogKind === 'reject'">
         <el-alert
           type="warning"
           :closable="false"
-          title="评审驳回后该需求将直接作废（终态），提交人如仍需要请重新提交新需求。"
+          :title="rejectMode === 'pending'
+            ? '待定的需求将保留在评审池并标记「待定」，之后仍可评审通过或驳回。'
+            : '评审驳回后该需求将直接作废（终态），提交人如仍需要请重新提交新需求。'"
           style="margin-bottom: 12px"
         />
         <el-input
@@ -448,9 +460,9 @@ async function onDesignSubmit(): Promise<void> {
           :rows="4"
           maxlength="500"
           show-word-limit
-          placeholder="请填写驳回原因，提交人会看到"
+          :placeholder="rejectMode === 'pending' ? '请填写待定备注（必填）：为什么暂缓、需要补充什么信息' : '请填写驳回原因，提交人会看到'"
         />
-        <div class="dialog-atts">
+        <div v-if="rejectMode === 'reject'" class="dialog-atts">
           <AttachmentUpload v-model="rejectForm.attachments" :max="9" tip="选填，驳回说明附件，最多 9 个" />
         </div>
       </template>

@@ -89,6 +89,7 @@ function qly_devreq_row_public(array $r): array
         'reviewerName' => $r['reviewer_name'],
         'reviewComment' => $r['review_comment'],
         'reviewedAt' => $r['reviewed_at'],
+        'reviewPending' => (int) ($r['review_pending'] ?? 0) === 1,
         'pmId' => $r['pm_id'] !== null ? (int) $r['pm_id'] : null,
         'pmName' => $r['pm_name'],
         'designDoc' => $r['design_doc'],
@@ -448,6 +449,7 @@ function qly_api_devreqs_review(): void
     if ($action === '通过') {
         qly_update('dev_request', $id, [
             'status' => '需求池',
+            'review_pending' => 0,
             'reviewer_id' => (int) $user['id'],
             'reviewer_name' => $name,
             'review_comment' => $comment !== '' ? $comment : null,
@@ -467,6 +469,23 @@ function qly_api_devreqs_review(): void
         qly_ok(null, '评审通过，需求已进入需求池');
     }
 
+    if ($action === '待定') {
+        if (trim($comment) === '') {
+            qly_fail('请填写待定备注');
+        }
+        // 待定：需求暂留评审池并标记，之后仍可评审通过或驳回
+        qly_update('dev_request', $id, [
+            'review_pending' => 1,
+            'reviewer_id' => (int) $user['id'],
+            'reviewer_name' => $name,
+            'review_comment' => $comment,
+            'reviewed_at' => $now,
+            'updated_at' => $now,
+        ]);
+        qly_log($user, '需求评审', (string) $row['req_no'], '评审待定：' . $row['title'] . '，备注：' . mb_substr($comment, 0, 80));
+        qly_ok(null, '已标记待定，需求保留在评审池');
+    }
+
     if ($action === '驳回') {
         if (trim($comment) === '') {
             qly_fail('请填写驳回原因');
@@ -474,6 +493,7 @@ function qly_api_devreqs_review(): void
         // 评审驳回 = 直接作废（终态，不可重提；仍需要则重新提交新需求）
         qly_update('dev_request', $id, [
             'status' => '已驳回',
+            'review_pending' => 0,
             'reviewer_id' => (int) $user['id'],
             'reviewer_name' => $name,
             'review_comment' => $comment,
