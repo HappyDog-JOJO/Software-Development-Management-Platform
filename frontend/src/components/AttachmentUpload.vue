@@ -1,14 +1,15 @@
 <script setup lang="ts">
 /**
  * 多附件上传组件。
- * - 支持拖拽 + 点击上传，图片缩略图预览，文档显示文件名与大小，可删除
+ * - 支持拖拽 + 点击上传 + 直接粘贴（Ctrl/Cmd+V 截图或文件），图片缩略图预览，文档显示文件名与大小，可删除
  * - 校验：最多 max 个，单个不超过 maxSizeMb（默认 50MB）
  * - 上传走 api/upload.ts，真实落盘到服务器 uploads/
  */
 import { computed, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { uploadFile } from '@/api/log'
-import { downloadAttachment, isPreviewableImage, openAttachment } from '@/utils/attachment'
+import { downloadAttachment, openAttachment } from '@/utils/attachment'
+import { normalizePastedFiles, usePasteFiles } from '@/composables/usePasteFiles'
 import type { Attachment } from '@/types'
 import { fmtSize, isImage } from '@/utils/format'
 
@@ -32,11 +33,22 @@ const props = withDefaults(
 
 const emit = defineEmits<{ 'update:modelValue': [Attachment[]] }>()
 
+const rootRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLInputElement | null>(null)
 const uploading = ref(false)
 
 const list = computed(() => props.modelValue || [])
 const canAdd = computed(() => !props.disabled && list.value.length < props.max)
+
+/** 粘贴上传：剪贴板带文件时由本组件接收（多个实例时按可见性与落点分发，见 composable） */
+usePasteFiles({
+  el: () => rootRef.value,
+  isVisible: () => !!rootRef.value && rootRef.value.getClientRects().length > 0,
+  isEnabled: () => !props.disabled,
+  onFiles: (files) => {
+    void handleFiles(normalizePastedFiles(files))
+  },
+})
 
 function pick(): void {
   if (!canAdd.value) {
@@ -134,7 +146,7 @@ async function downloadAll(): Promise<void> {
 </script>
 
 <template>
-  <div class="attachment-upload">
+  <div ref="rootRef" class="attachment-upload">
     <div
       class="attachment-upload__drop"
       :class="{ 'is-disabled': disabled, 'is-full': !canAdd }"
@@ -145,10 +157,10 @@ async function downloadAll(): Promise<void> {
       <div class="attachment-upload__hint">
         <span class="attachment-upload__plus">+</span>
         <span class="attachment-upload__text">
-          点击或拖拽文件到此处上传（{{ list.length }}/{{ max }}，单个不超过 {{ maxSizeMb }}MB）
+          点击、拖拽或粘贴（Ctrl/Cmd+V）文件到此处上传（{{ list.length }}/{{ max }}，单个不超过 {{ maxSizeMb }}MB）
         </span>
       </div>
-      <div class="attachment-upload__rule">图片可点击直接查看；文档类仅支持下载</div>
+      <div class="attachment-upload__rule">图片可点击直接查看；文档类仅支持下载；支持直接粘贴截图</div>
       <div v-if="tip" class="form-tip">{{ tip }}</div>
       <input
         ref="inputRef"
