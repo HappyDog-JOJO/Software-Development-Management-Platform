@@ -447,6 +447,17 @@ a {
   font-variant-numeric: tabular-nums;
 }
 
+/* 可点击编号（列表 → 详情）：与列表内文字按钮同色，悬停下划线 */
+.moon-table .cell-code--link {
+  color: var(--color-primary);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.moon-table .cell-code--link:hover {
+  text-decoration: underline;
+}
+
 /* 单元格内描述文本单行截断 */
 .cell-ellipsis {
   display: block;

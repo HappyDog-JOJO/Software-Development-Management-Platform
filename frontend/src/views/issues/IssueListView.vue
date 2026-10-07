@@ -514,8 +514,8 @@ watch(
           >
             <template #default="{ row }">
               <template v-if="c.key === 'issueNo'">
-                <el-tooltip :content="row.issueNo" placement="top" effect="light" :show-after="200">
-                  <span class="cell-code cell-nowrap">{{ row.issueNo }}</span>
+                <el-tooltip content="点击查看详情" placement="top" effect="light" :show-after="200">
+                  <a class="cell-code cell-code--link cell-nowrap" @click="goDetail(row)">{{ row.issueNo }}</a>
                 </el-tooltip>
               </template>
 
