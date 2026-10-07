@@ -180,8 +180,8 @@ function onDialogSubmit(): void {
 }
 
 async function onRejectSubmit(): Promise<void> {
-  if (rejectForm.comment.trim().length < 5) {
-    ElMessage.warning('驳回原因至少 5 个字')
+  if (!rejectForm.comment.trim()) {
+    ElMessage.warning('请填写驳回原因')
     return
   }
   submitting.value = true
@@ -209,8 +209,8 @@ function openDevDone(): void {
 }
 
 async function onDevDoneSubmit(): Promise<void> {
-  if (devDoneForm.doneNote.trim().length < 5) {
-    ElMessage.warning('完成说明至少 5 个字')
+  if (!devDoneForm.doneNote.trim()) {
+    ElMessage.warning('请填写完成说明')
     return
   }
   submitting.value = true
@@ -250,8 +250,8 @@ async function openDesign(): Promise<void> {
 }
 
 async function onDesignSubmit(): Promise<void> {
-  if (designForm.designDoc.trim().length < 10) {
-    ElMessage.warning('设计说明至少 10 个字')
+  if (!designForm.designDoc.trim()) {
+    ElMessage.warning('请填写设计说明')
     return
   }
   if (!designForm.branch.trim()) {
@@ -326,7 +326,7 @@ async function onDesignSubmit(): Promise<void> {
           :rows="4"
           maxlength="500"
           show-word-limit
-          placeholder="请填写驳回原因，提交人会看到（至少 5 个字）"
+          placeholder="请填写驳回原因，提交人会看到"
         />
         <div class="dialog-atts">
           <AttachmentUpload v-model="rejectForm.attachments" :max="9" tip="选填，驳回说明附件，最多 9 个" />
@@ -343,7 +343,7 @@ async function onDesignSubmit(): Promise<void> {
               :rows="5"
               maxlength="2000"
               show-word-limit
-              placeholder="功能设计方案要点、交互与边界说明（至少 10 个字）"
+              placeholder="功能设计方案要点、交互与边界说明"
             />
           </el-form-item>
           <el-form-item label="设计文档">
@@ -373,7 +373,7 @@ async function onDesignSubmit(): Promise<void> {
           :rows="4"
           maxlength="1000"
           show-word-limit
-          placeholder="完成说明：做了什么、自测情况、需要注意的点（至少 5 个字）"
+          placeholder="完成说明：做了什么、自测情况、需要注意的点"
         />
         <div class="dialog-atts">
           <AttachmentUpload v-model="devDoneForm.attachments" :max="9" tip="选填，完成凭证/截图，最多 9 个" />

@@ -54,8 +54,8 @@ const rules: FormRules = {
     { required: true, message: '请填写处理备注', trigger: 'blur' },
     {
       validator: (_rule, value: string, callback) => {
-        if (!value || value.trim().length < 5) {
-          callback(new Error('处理备注至少 5 个字'))
+        if (!value || !value.trim()) {
+          callback(new Error('请填写处理备注'))
           return
         }
         callback()
@@ -273,7 +273,7 @@ function close(): void {
             :rows="4"
             maxlength="500"
             show-word-limit
-            placeholder="请填写处理过程与结论，至少 5 个字"
+            placeholder="请填写处理过程与结论"
           />
           <div v-if="prefilledFromLast" class="form-tip">已回填上次处理内容，可直接在此基础上补充或修改。</div>
         </el-form-item>

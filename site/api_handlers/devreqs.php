@@ -258,8 +258,8 @@ function qly_api_devreqs_create(): void
     if (mb_strlen(trim($title)) < 4) {
         qly_fail('需求标题至少 4 个字');
     }
-    if (mb_strlen($description) < 10) {
-        qly_fail('需求描述至少 10 个字');
+    if (trim($description) === '') {
+        qly_fail('请填写需求描述');
     }
     if ($moduleId <= 0) {
         qly_fail('请选择所属模块');
@@ -372,8 +372,8 @@ function qly_api_devreqs_review(): void
     }
 
     if ($action === '驳回') {
-        if (mb_strlen($comment) < 5) {
-            qly_fail('驳回原因至少 5 个字');
+        if (trim($comment) === '') {
+            qly_fail('请填写驳回原因');
         }
         // 评审驳回 = 直接作废（终态，不可重提；仍需要则重新提交新需求）
         qly_update('dev_request', $id, [
@@ -445,8 +445,8 @@ function qly_api_devreqs_design(): void
     if (!$isAdmin && (int) ($row['pm_id'] ?? 0) !== (int) $user['id']) {
         qly_forbidden('仅认领该需求的产品经理可提交设计');
     }
-    if (mb_strlen($designDoc) < 10) {
-        qly_fail('设计说明至少 10 个字');
+    if (trim($designDoc) === '') {
+        qly_fail('请填写设计说明');
     }
     if ($branch === '') {
         qly_fail('请填写开发分支');
@@ -505,8 +505,8 @@ function qly_api_devreqs_devdone(): void
     if ((string) $row['status'] !== '开发中心') {
         qly_fail('该需求不在开发中心');
     }
-    if (mb_strlen($doneNote) < 5) {
-        qly_fail('完成说明至少 5 个字');
+    if (trim($doneNote) === '') {
+        qly_fail('请填写完成说明');
     }
     if (is_array($attachments) && count($attachments) > 9) {
         qly_fail('附件最多 9 个');

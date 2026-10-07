@@ -58,8 +58,8 @@ const rules: FormRules = {
     { required: true, message: '请填写需求描述', trigger: 'blur' },
     {
       validator: (_r, value: string, cb) => {
-        if (!value || value.trim().length < 10) {
-          cb(new Error('需求描述至少 10 个字，请把背景、期望效果与影响说清楚'))
+        if (!value || !value.trim()) {
+          cb(new Error('请填写需求描述'))
           return
         }
         cb()
@@ -181,9 +181,9 @@ async function loadDuty(): Promise<void> {
               :rows="6"
               maxlength="1000"
               show-word-limit
-              placeholder="请描述：业务背景、期望的功能效果、涉及的客户与场景、不做的影响。至少 10 个字。"
+              placeholder="请描述：业务背景、期望的功能效果、涉及的客户与场景、不做的影响"
             />
-            <div class="form-tip">已输入 {{ descLength }} 字（至少 10 字）</div>
+            <div class="form-tip">已输入 {{ descLength }} 字</div>
           </el-form-item>
 
           <el-form-item label="附件上传">

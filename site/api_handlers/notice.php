@@ -76,8 +76,8 @@ function qly_api_notice_save(): void
     $content = trim((string) qly_input('content', ''));
     $status = (int) qly_input('status', 1) === 0 ? 0 : 1;
 
-    if (mb_strlen($content) < 2) {
-        qly_fail('公告内容至少 2 个字');
+    if ($content === '') {
+        qly_fail('请输入公告内容');
     }
     if (mb_strlen($content) > 2000) {
         qly_fail('公告内容请控制在 2000 字以内');

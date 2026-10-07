@@ -71,7 +71,7 @@ const form = reactive({ id: 0, title: '', content: '', status: 1 })
 const rules: FormRules = {
   content: [
     { required: true, message: '请输入公告内容', trigger: 'blur' },
-    { min: 2, max: 2000, message: '内容需 2-2000 字', trigger: 'blur' },
+    { max: 2000, message: '内容不超过 2000 字', trigger: 'blur' },
   ],
   title: [{ max: 60, message: '标题不超过 60 字', trigger: 'blur' }],
 }

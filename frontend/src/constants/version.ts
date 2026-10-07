@@ -8,4 +8,4 @@
  * 作用：让用户一眼确认线上是否已更新到最新版本（入口 html 禁缓存 +
  * 侧边栏显示版本，可避免「改了没生效」的误判）。
  */
-export const APP_VERSION = '1.12.4'
+export const APP_VERSION = '1.12.5'

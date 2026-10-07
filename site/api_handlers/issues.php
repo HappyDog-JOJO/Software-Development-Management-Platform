@@ -280,8 +280,8 @@ function qly_api_issues_create(): void
     $moduleId = qly_input_int('moduleId', 0);
     $attachments = qly_input('attachments', []);
 
-    if (mb_strlen($description) < 10) {
-        qly_fail('问题描述至少 10 个字');
+    if (trim($description) === '') {
+        qly_fail('请填写问题描述');
     }
     if ($moduleId <= 0) {
         qly_fail('请选择所属模块');
@@ -363,8 +363,8 @@ function qly_api_issues_handle(): void
     if (!$issue) {
         qly_fail('问题不存在');
     }
-    if (mb_strlen($remark) < 5) {
-        qly_fail('处理备注至少 5 个字');
+    if (trim($remark) === '') {
+        qly_fail('请填写处理备注');
     }
     if ($categoryId <= 0) {
         qly_fail('请选择问题分类');
@@ -497,8 +497,8 @@ function qly_api_issues_append(): void
     $user = qly_auth_user();
     $id = qly_input_int('id', 0);
     $content = (string) qly_input('content', '');
-    if (mb_strlen($content) < 5) {
-        qly_fail('补充说明至少 5 个字');
+    if (trim($content) === '') {
+        qly_fail('请填写补充说明');
     }
     $issue = qly_one('SELECT * FROM `issue` WHERE id = :id', [':id' => $id]);
     if (!$issue) {
