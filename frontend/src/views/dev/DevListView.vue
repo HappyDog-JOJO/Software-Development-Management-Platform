@@ -64,7 +64,11 @@ const page = ref(1)
 const pageSize = ref(10)
 const showStatusColumn = computed(() => !props.stage)
 
-/** 按「列配置」的顺序与显隐生成实际渲染的列（阶段页不展示状态列） */
+/**
+ * 按「列配置」的顺序与显隐生成实际渲染的列。
+ * 条件列：状态列只在「我的需求」等未按环节过滤的页面展示；处理人列在「我的需求」不展示
+ * （提交人视角下多为待评审/待认领等状态重复信息，负责人明细看详情页）。
+ */
 const devColumns = computed(() =>
   colcfg
     .ordered()
@@ -72,7 +76,8 @@ const devColumns = computed(() =>
       (c) =>
         c.visible &&
         DEV_COL_DEFS[c.key] &&
-        (c.key !== 'status' || showStatusColumn.value),
+        (c.key !== 'status' || showStatusColumn.value) &&
+        (c.key !== 'owner' || !props.mine),
     )
     .map((c) => ({ key: c.key, ...DEV_COL_DEFS[c.key] })),
 )
