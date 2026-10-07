@@ -13,7 +13,8 @@ import { useAuthStore } from '@/stores/auth'
  *
  * 约定：
  * - `fixed: true` 的列（如选择列、操作列）不参与配置：始终显示、不可隐藏、不可移动。
- * - 新版本新增的列若不在用户已存的顺序里，会自动追加到末尾（保证升级后不会“新列莫名消失”）。
+ * - 新版本新增的列若不在用户已存的顺序里，会**插入到默认顺序的相邻位置**
+ *   （如「提交部门」紧跟「提交人」），保证升级后新列的出现位置符合页面默认布局、不会“新列莫名消失”。
  */
 
 const STORAGE_PREFIX = 'aftersales_colcfg_'
@@ -85,11 +86,20 @@ export function useColumnConfig(tableKey: string) {
     const keys = columns.filter((c) => !c.fixed).map((c) => c.key)
     // 1) 剔除已不存在的列
     const keptOrder = state.order.filter((k) => keys.includes(k))
-    // 2) 新列追加到末尾（保持升级平滑）
-    keys.forEach((k) => {
-      if (!keptOrder.includes(k)) {
-        keptOrder.push(k)
+    // 2) 新列插入到「默认顺序里前一个已存在列」的后面（保持升级前后布局一致）
+    keys.forEach((k, idx) => {
+      if (keptOrder.includes(k)) {
+        return
       }
+      let insertAt = 0
+      for (let i = idx - 1; i >= 0; i -= 1) {
+        const pos = keptOrder.indexOf(keys[i])
+        if (pos >= 0) {
+          insertAt = pos + 1
+          break
+        }
+      }
+      keptOrder.splice(insertAt, 0, k)
     })
     if (keptOrder.join(',') !== state.order.join(',')) {
       state.order = keptOrder

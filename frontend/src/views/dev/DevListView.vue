@@ -47,7 +47,8 @@ const DEV_COL_DEFS: Record<string, DevColDef> = {
   moduleName: { label: '模块', width: 80 },
   priority: { label: '优先级', width: 78, align: 'center', sortable: true },
   status: { label: '状态', width: 100, align: 'center' },
-  submitterName: { label: '提交人', width: 104 },
+  submitterName: { label: '提交人', width: 96 },
+  submitterDepartmentName: { label: '提交部门', width: 116 },
   owner: { label: '当前担当', minWidth: 120 },
   createdAt: { label: '提交时间', width: 150, sortable: true },
 }
@@ -216,6 +217,7 @@ onMounted(() => {
     { key: 'priority', label: '优先级' },
     { key: 'status', label: '状态' },
     { key: 'submitterName', label: '提交人' },
+    { key: 'submitterDepartmentName', label: '提交部门' },
     { key: 'owner', label: '当前担当' },
     { key: 'createdAt', label: '提交时间' },
     { key: '操作', label: '操作', fixed: true },
@@ -363,10 +365,11 @@ watch(
               </template>
 
               <template v-else-if="c.key === 'submitterName'">
-                <div class="cell-stack">
-                  <span class="cell-nowrap">{{ row.submitterName }}</span>
-                  <span class="cell-stack__sub">{{ row.submitterDepartmentName || '未分配部门' }}</span>
-                </div>
+                <span class="cell-nowrap">{{ row.submitterName }}</span>
+              </template>
+
+              <template v-else-if="c.key === 'submitterDepartmentName'">
+                <span class="cell-nowrap">{{ row.submitterDepartmentName || '未分配部门' }}</span>
               </template>
 
               <template v-else-if="c.key === 'owner'">
@@ -471,20 +474,6 @@ watch(
 .cell-code {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-}
-
-.cell-stack {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  line-height: 1.35;
-  gap: 2px;
-}
-
-.cell-stack__sub {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  font-variant-numeric: tabular-nums;
 }
 
 /* 操作列详情按钮：与各列表页文字按钮写法一致 */
