@@ -425,6 +425,8 @@ export interface DevRequest {
   pmId: number | null
   pmName: string | null
   designDoc: string | null
+  /** 设计文档链接（网址） */
+  designUrl: string | null
   branch: string | null
   devLeaderId: number | null
   devLeaderName: string | null
@@ -470,6 +472,10 @@ export interface DevQuery {
   mine?: '1'
   /** 隐藏评审待定的需求（我的需求页开关） */
   hidePending?: '1'
+  /** 设计人筛选（开发中心） */
+  pmId?: number
+  /** 负责人筛选（开发中心） */
+  devLeaderId?: number
   page?: number
   pageSize?: number
   sortField?: 'createdAt' | 'priority'

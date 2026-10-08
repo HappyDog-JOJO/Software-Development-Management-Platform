@@ -63,35 +63,36 @@ export function claimDevRequest(id: number): Promise<null> {
   return http.post<null>('/api.php?r=devreqs/claim', { id })
 }
 
-/** 设计中心完成设计 → 开发中心 */
+/** 设计中心完成设计 → 开发中心（设计文档为网址） */
 export interface DesignPayload {
+  designUrl: string
   designDoc: string
   branch: string
   devLeaderId: number
-  attachments?: DevAttachmentPayload[]
 }
 
 export function designDevRequest(id: number, payload: DesignPayload): Promise<null> {
   return http.post<null>('/api.php?r=devreqs/design', { id, ...payload })
 }
 
-/** 开发完成提交（开发负责人/管理员）：开发中心 → 待发布 */
-export function devDoneDevRequest(
-  id: number,
-  doneNote: string,
-  attachments: DevAttachmentPayload[] = [],
-): Promise<null> {
-  return http.post<null>('/api.php?r=devreqs/devdone', { id, doneNote, attachments })
+/** 开发中心发布上线（负责人/管理员，支持批量）：开发中心 → 待发布（发布上线列表） */
+export function battlePublishDevRequest(ids: number[]): Promise<{ affected: number; skipped: number }> {
+  return http.post<{ affected: number; skipped: number }>('/api.php?r=devreqs/battle-publish', { ids })
 }
 
-/** 发布上线（评审委员/管理员）：待发布 → 已上线 */
+/** 执行发布（评审委员/管理员）：待发布 → 已上线 */
 export function releaseDevRequest(id: number, comment = ''): Promise<null> {
   return http.post<null>('/api.php?r=devreqs/release', { id, comment })
 }
 
-/** 开发工程师候选（指定开发负责人） */
+/** 负责人候选（开发工程师 / 管理员） */
 export function fetchDevCandidates(): Promise<DevCandidate[]> {
   return http.get<DevCandidate[]>('/api.php?r=devreqs/devs')
+}
+
+/** 设计人候选（产品经理 / 管理员，开发中心筛选用） */
+export function fetchPmCandidates(): Promise<DevCandidate[]> {
+  return http.get<DevCandidate[]>('/api.php?r=devreqs/pms')
 }
 
 export type { Attachment, UploadResult }

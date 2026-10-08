@@ -2,7 +2,7 @@
 /**
  * 需求详情页：六站步骤条 + 全量信息 + 附件 + 时间线。
  * 操作按钮由 DevRequestActions 按角色与状态动态渲染；
- * 开发中心内由开发负责人直接提交开发完成（操作区按钮）。
+ * 开发中心内由负责人直接发布上线（操作区按钮）。
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -143,14 +143,8 @@ watch(reqId, load)
             <span class="mono">{{ detail.branch || '—' }}</span>
           </div>
           <div class="meta-item">
-            <span class="meta-label">开发负责人</span>
+            <span class="meta-label">负责人</span>
             <span>{{ detail.devLeaderName || '—' }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">开发完成</span>
-            <span>
-              {{ detail.devDoneAt ? fmtDateTime(detail.devDoneAt) : '开发中' }}
-            </span>
           </div>
           <div class="meta-item">
             <span class="meta-label">上线</span>
@@ -160,14 +154,21 @@ watch(reqId, load)
           </div>
         </div>
 
+        <div v-if="detail.designUrl" class="design-doc">
+          <div class="design-doc__title">设计文档（{{ detail.pmName || '—' }}）</div>
+          <div class="design-doc__body">
+            <a
+              class="cell-code cell-code--link"
+              :href="detail.designUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+            >{{ detail.designUrl }}</a>
+          </div>
+        </div>
+
         <div v-if="detail.designDoc" class="design-doc">
           <div class="design-doc__title">设计说明（{{ detail.pmName }}）</div>
           <div class="design-doc__body">{{ detail.designDoc }}</div>
-        </div>
-
-        <div v-if="detail.devDoneNote" class="design-doc">
-          <div class="design-doc__title">开发完成说明</div>
-          <div class="design-doc__body">{{ detail.devDoneNote }}</div>
         </div>
       </div>
 

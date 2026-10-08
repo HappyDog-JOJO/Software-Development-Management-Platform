@@ -3,7 +3,8 @@
  * 需求操作组件：按「角色 + 需求状态」动态渲染操作按钮与弹窗。
  * 列表页与详情页共用；操作成功后 emit('refresh') 让父级重新拉数据。
  * 覆盖动作：评审通过（备注选填）/ 待定（备注必填，暂留评审池）/ 驳回（备注必填，作废终态）、
- *           认领、提交设计、提交开发完成、发布上线、修改/删除（提交人本人或管理员，仅评审池）。
+ *           认领、提交设计（设计文档为网址）、发布上线（开发中心，负责人/管理员）、
+ *           修改/删除（提交人本人或管理员，仅评审池）。
  * link：列表内传 true → 文字按钮（与各列表页操作列一致）；详情页不传 → 实心按钮。
  */
 import { computed, reactive, ref } from 'vue'
@@ -11,10 +12,10 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import { useDictStore } from '@/stores/dict'
 import {
+  battlePublishDevRequest,
   claimDevRequest,
   deleteDevRequest,
   designDevRequest,
-  devDoneDevRequest,
   fetchDevCandidates,
   getDevRequest,
   releaseDevRequest,
@@ -69,7 +70,8 @@ const showDesign = computed(
     canDesignReq(auth.user?.roles) &&
     (admin.value || isClaimer.value),
 )
-const showDevDone = computed(
+/** 开发中心发布上线：负责人 或 管理员 */
+const showBattlePublish = computed(
   () => props.req.status === '开发中心' && (admin.value || isDevLeader.value),
 )
 const showRelease = computed(
@@ -85,7 +87,7 @@ const hasActions = computed(
     showReview.value ||
     showClaim.value ||
     showDesign.value ||
-    showDevDone.value ||
+    showBattlePublish.value ||
     showRelease.value ||
     showEdit.value,
 )
@@ -160,8 +162,8 @@ async function onDelete(): Promise<void> {
 /* —— 弹窗通用 —— */
 const dialogVisible = ref(false)
 const submitting = ref(false)
-/** 当前打开的弹窗：修改 / 驳回 / 提交设计 / 提交开发完成 */
-const dialogKind = ref<'edit' | 'reject' | 'design' | 'devdone'>('reject')
+/** 当前打开的弹窗：修改 / 驳回 / 提交设计 */
+const dialogKind = ref<'edit' | 'reject' | 'design'>('reject')
 const toPayload = (list: Attachment[]): DevAttachmentPayload[] =>
   list.map((a) => ({ url: a.url, name: a.name, size: a.size, mimeType: a.mimeType }))
 
@@ -256,10 +258,8 @@ function onDialogSubmit(): void {
     void onEditSubmit()
   } else if (dialogKind.value === 'reject') {
     void onRejectSubmit()
-  } else if (dialogKind.value === 'design') {
-    void onDesignSubmit()
   } else {
-    void onDevDoneSubmit()
+    void onDesignSubmit()
   }
 }
 
@@ -287,46 +287,37 @@ async function onRejectSubmit(): Promise<void> {
   }
 }
 
-/* —— 提交开发完成（开发中心 → 待发布） —— */
-const devDoneForm = reactive({ doneNote: '', attachments: [] as Attachment[] })
-
-function openDevDone(): void {
-  devDoneForm.doneNote = ''
-  devDoneForm.attachments = []
-  dialogKind.value = 'devdone'
-  dialogVisible.value = true
-}
-
-async function onDevDoneSubmit(): Promise<void> {
-  if (!devDoneForm.doneNote.trim()) {
-    ElMessage.warning('请填写完成说明')
-    return
-  }
-  submitting.value = true
+/* —— 发布上线（开发中心 → 待发布；负责人或管理员） —— */
+async function onBattlePublish(): Promise<void> {
+  await ElMessageBox.confirm(
+    `确定将「${props.req.title}」发布上线吗？发布后进入「发布上线」列表，等待正式发布。`,
+    '发布上线',
+    { confirmButtonText: '确定发布', cancelButtonText: '取消', type: 'warning' },
+  )
+  busy.value = true
   try {
-    await devDoneDevRequest(props.req.id, devDoneForm.doneNote.trim(), toPayload(devDoneForm.attachments))
-    ElMessage.success('开发完成已提交，需求进入待发布')
-    dialogVisible.value = false
+    await battlePublishDevRequest([props.req.id])
+    ElMessage.success('已提交，需求进入发布上线列表')
     emit('refresh')
   } finally {
-    submitting.value = false
+    busy.value = false
   }
 }
 
-/* —— 提交设计（设计中心） —— */
+/* —— 提交设计（设计中心；设计文档为网址，负责人默认商辂） —— */
 const designForm = reactive({
+  designUrl: '',
   designDoc: '',
   branch: '',
   devLeaderId: undefined as number | undefined,
-  attachments: [] as Attachment[],
 })
 const devs = ref<DevCandidate[]>([])
 
 async function openDesign(): Promise<void> {
+  designForm.designUrl = ''
   designForm.designDoc = ''
   designForm.branch = ''
   designForm.devLeaderId = undefined
-  designForm.attachments = []
   dialogKind.value = 'design'
   dialogVisible.value = true
   if (!devs.value.length) {
@@ -336,11 +327,22 @@ async function openDesign(): Promise<void> {
       devs.value = []
     }
   }
+  // 负责人默认选中「商辂」（存在该候选时）
+  if (!designForm.devLeaderId) {
+    const def = devs.value.find((d) => d.name === '商辂' || d.account === '商辂')
+    if (def) {
+      designForm.devLeaderId = def.id
+    }
+  }
 }
 
 async function onDesignSubmit(): Promise<void> {
-  if (!designForm.designDoc.trim()) {
-    ElMessage.warning('请填写设计说明')
+  if (!designForm.designUrl.trim()) {
+    ElMessage.warning('请填写设计文档链接')
+    return
+  }
+  if (!/^https?:\/\/\S+$/i.test(designForm.designUrl.trim())) {
+    ElMessage.warning('设计文档链接需以 http/https 开头')
     return
   }
   if (!designForm.branch.trim()) {
@@ -348,16 +350,16 @@ async function onDesignSubmit(): Promise<void> {
     return
   }
   if (!designForm.devLeaderId) {
-    ElMessage.warning('请选择开发负责人')
+    ElMessage.warning('请选择负责人')
     return
   }
   submitting.value = true
   try {
     await designDevRequest(props.req.id, {
+      designUrl: designForm.designUrl.trim(),
       designDoc: designForm.designDoc.trim(),
       branch: designForm.branch.trim(),
       devLeaderId: designForm.devLeaderId,
-      attachments: toPayload(designForm.attachments),
     })
     ElMessage.success('设计已提交，任务进入开发中心')
     dialogVisible.value = false
@@ -383,8 +385,8 @@ async function onDesignSubmit(): Promise<void> {
     <!-- 设计中心 -->
     <el-button v-if="showDesign" v-bind="btnPrimary" @click="openDesign">提交设计</el-button>
 
-    <!-- 开发中心 -->
-    <el-button v-if="showDevDone" v-bind="btnPrimary" @click="openDevDone">提交开发完成</el-button>
+    <!-- 开发中心：发布上线（进入发布上线列表） -->
+    <el-button v-if="showBattlePublish" v-bind="btnPrimary" :loading="busy" @click="onBattlePublish">发布上线</el-button>
 
     <!-- 待发布 -->
     <el-button v-if="showRelease" v-bind="btnPrimary" :loading="busy" @click="onRelease">执行发布</el-button>
@@ -398,7 +400,6 @@ async function onDesignSubmit(): Promise<void> {
       :title="
         dialogKind === 'edit' ? '修改需求（评审前）'
         : dialogKind === 'design' ? '提交设计（设计中心 → 开发中心）'
-        : dialogKind === 'devdone' ? '提交开发完成（开发中心 → 待发布）'
         : rejectMode === 'pending' ? '评审待定（暂留评审池）'
         : '评审驳回（作废）'
       "
@@ -467,27 +468,27 @@ async function onDesignSubmit(): Promise<void> {
         </div>
       </template>
 
-      <!-- 设计表单 -->
+      <!-- 设计表单（设计文档为网址） -->
       <template v-else-if="dialogKind === 'design'">
         <el-form label-width="92px">
-          <el-form-item label="设计说明" required>
+          <el-form-item label="设计文档" required>
+            <el-input v-model="designForm.designUrl" maxlength="500" placeholder="设计文档链接，如 https://docs.example.com/prd/xxx" />
+          </el-form-item>
+          <el-form-item label="设计说明">
             <el-input
               v-model="designForm.designDoc"
               type="textarea"
               :rows="5"
               maxlength="2000"
               show-word-limit
-              placeholder="功能设计方案要点、交互与边界说明"
+              placeholder="功能设计方案要点、交互与边界说明（选填）"
             />
-          </el-form-item>
-          <el-form-item label="设计文档">
-            <AttachmentUpload v-model="designForm.attachments" :max="9" tip="选填，原型/设计稿等附件，最多 9 个" />
           </el-form-item>
           <el-form-item label="开发分支" required>
             <el-input v-model="designForm.branch" maxlength="100" placeholder="如 feature/export-center" />
           </el-form-item>
-          <el-form-item label="开发负责人" required>
-            <el-select v-model="designForm.devLeaderId" placeholder="选择开发工程师" style="width: 100%">
+          <el-form-item label="负责人" required>
+            <el-select v-model="designForm.devLeaderId" placeholder="选择负责人" style="width: 100%">
               <el-option
                 v-for="d in devs"
                 :key="d.id"
@@ -497,21 +498,6 @@ async function onDesignSubmit(): Promise<void> {
             </el-select>
           </el-form-item>
         </el-form>
-      </template>
-
-      <!-- 开发完成表单 -->
-      <template v-else>
-        <el-input
-          v-model="devDoneForm.doneNote"
-          type="textarea"
-          :rows="4"
-          maxlength="1000"
-          show-word-limit
-          placeholder="完成说明：做了什么、自测情况、需要注意的点"
-        />
-        <div class="dialog-atts">
-          <AttachmentUpload v-model="devDoneForm.attachments" :max="9" tip="选填，完成凭证/截图，最多 9 个" />
-        </div>
       </template>
 
       <template #footer>

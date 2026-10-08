@@ -9,8 +9,9 @@
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useDictStore } from '@/stores/dict'
-import { fetchDevRequests } from '@/api/devreq'
+import { battlePublishDevRequest, fetchDevCandidates, fetchDevRequests, fetchPmCandidates } from '@/api/devreq'
 import { DEV_PRIORITY_CLASS, DEV_PRIORITY_OPTIONS, DEV_STATUS_CLASS, DEV_STATUS_OPTIONS } from '@/constants/devreq'
 import DevRequestActions from '@/components/DevRequestActions.vue'
 import EmptyIllustration from '@/components/illustrations/EmptyIllustration.vue'
@@ -18,7 +19,7 @@ import ColumnConfig from '@/components/ColumnConfig.vue'
 import { fmtDateTime } from '@/utils/format'
 import { useColumnWidths } from '@/composables/useColumnWidths'
 import { useColumnConfig } from '@/composables/useColumnConfig'
-import type { DevPriority, DevRequest, DevStatus } from '@/types'
+import type { DevCandidate, DevPriority, DevRequest, DevStatus } from '@/types'
 
 const props = defineProps<{ stage?: DevStatus; mine?: boolean }>()
 
@@ -44,6 +45,9 @@ interface DevColDef {
 const DEV_COL_DEFS: Record<string, DevColDef> = {
   reqNo: { label: '需求编号', width: 200 },
   title: { label: '需求标题', minWidth: 180 },
+  designUrl: { label: '设计文档', width: 110 },
+  pmName: { label: '设计人', width: 100 },
+  devLeaderName: { label: '负责人', width: 100 },
   moduleName: { label: '模块', width: 80 },
   priority: { label: '优先级', width: 78, align: 'center', sortable: true },
   status: { label: '状态', width: 100, align: 'center' },
@@ -63,23 +67,34 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(10)
 const showStatusColumn = computed(() => !props.stage)
+/** 开发中心页：展示设计文档/设计人/负责人三列（其余页面不展示） */
+const isBattleStage = computed(() => props.stage === '开发中心')
 
 /**
  * 按「列配置」的顺序与显隐生成实际渲染的列。
  * 条件列：状态列只在「我的需求」等未按环节过滤的页面展示；
  * 处理人列在「我的需求」（提交人视角）与「评审池」（尚未分配负责人，只有待评审/待定）
- * 不展示——评审池的待定标记改在标题列展示，负责人明细看详情页。
+ * 不展示——评审池的待定标记改在标题列展示，负责人明细看详情页；
+ * 设计文档/设计人/负责人三列仅在「开发中心」展示（配合筛选）。
  */
 const devColumns = computed(() =>
   colcfg
     .ordered()
-    .filter(
-      (c) =>
-        c.visible &&
-        DEV_COL_DEFS[c.key] &&
-        (c.key !== 'status' || showStatusColumn.value) &&
-        (c.key !== 'owner' || (!props.mine && props.stage !== '评审池')),
-    )
+    .filter((c) => {
+      if (!c.visible || !DEV_COL_DEFS[c.key]) {
+        return false
+      }
+      if (c.key === 'status' && !showStatusColumn.value) {
+        return false
+      }
+      if (c.key === 'owner' && (props.mine || props.stage === '评审池')) {
+        return false
+      }
+      if (['designUrl', 'pmName', 'devLeaderName'].includes(c.key) && !isBattleStage.value) {
+        return false
+      }
+      return true
+    })
     .map((c) => ({ key: c.key, ...DEV_COL_DEFS[c.key] })),
 )
 
@@ -91,9 +106,9 @@ const stageDesc = computed(() => {
     case '需求池':
       return '评审通过的需求在此集结（按优先级排序），产品经理从中挑选任务认领设计。'
     case '设计中心':
-      return '产品经理上传设计文档、指定开发分支与开发负责人。'
+      return '产品经理填写设计文档链接、指定开发分支与负责人。'
     case '开发中心':
-      return '开发负责人按分支完成开发，提交开发完成后进入待发布。'
+      return '负责人按分支完成开发后点「发布上线」提交（负责人或管理员，可批量），进入发布上线列表等待正式发布。'
     case '待发布':
       return '开发完成的需求在此等待发布；评审委员执行发布后正式上线。'
     default:
@@ -106,7 +121,56 @@ const filters = reactive({
   priority: '' as DevPriority | '',
   status: '' as DevStatus | '',
   moduleId: undefined as number | undefined,
+  pmId: undefined as number | undefined,
+  devLeaderId: undefined as number | undefined,
 })
+
+/** 开发中心筛选候选：设计人（产品经理/管理员）与负责人（开发工程师/管理员） */
+const pmOptions = ref<DevCandidate[]>([])
+const leaderOptions = ref<DevCandidate[]>([])
+async function loadCandidates(): Promise<void> {
+  if (!isBattleStage.value) {
+    return
+  }
+  try {
+    const [pms, leaders] = await Promise.all([fetchPmCandidates(), fetchDevCandidates()])
+    pmOptions.value = pms
+    leaderOptions.value = leaders
+  } catch {
+    pmOptions.value = []
+    leaderOptions.value = []
+  }
+}
+
+/** 批量发布（开发中心）：勾选后一次提交到发布上线列表 */
+const selectedRows = ref<DevRequest[]>([])
+const batchBusy = ref(false)
+function onSelectionChange(rows: DevRequest[]): void {
+  selectedRows.value = rows
+}
+/** 只有「开发中心」状态的行参与批量发布（选择列已限制在本页，这里再兜底） */
+const publishableSelected = computed(() => selectedRows.value.filter((r) => r.status === '开发中心'))
+async function onBatchPublish(): Promise<void> {
+  const ids = publishableSelected.value.map((r) => r.id)
+  if (!ids.length) {
+    ElMessage.warning('请先勾选要发布的需求（仅开发中心状态）')
+    return
+  }
+  await ElMessageBox.confirm(
+    `确定将勾选的 ${ids.length} 条需求发布上线吗？发布后进入「发布上线」列表，等待正式发布。`,
+    '批量发布上线',
+    { confirmButtonText: '确定发布', cancelButtonText: '取消', type: 'warning' },
+  )
+  batchBusy.value = true
+  try {
+    const res = await battlePublishDevRequest(ids)
+    ElMessage.success(`已提交 ${res.affected} 条到发布上线${res.skipped > 0 ? `，${res.skipped} 条已跳过` : ''}`)
+    selectedRows.value = []
+    await load()
+  } finally {
+    batchBusy.value = false
+  }
+}
 
 /** 筛选区折叠（记忆用户选择，与问题列表一致） */
 const FILTER_COLLAPSE_KEY = 'command_dev_reqs_filter_collapsed'
@@ -133,6 +197,8 @@ const activeFilterCount = computed(() => {
   if (filters.priority) n += 1
   if (filters.status) n += 1
   if (filters.moduleId) n += 1
+  if (filters.pmId) n += 1
+  if (filters.devLeaderId) n += 1
   if (filters.keyword) n += 1
   return n
 })
@@ -151,6 +217,8 @@ async function load(): Promise<void> {
       keyword: filters.keyword.trim() || undefined,
       priority: filters.priority || undefined,
       moduleId: filters.moduleId,
+      pmId: isBattleStage.value ? filters.pmId : undefined,
+      devLeaderId: isBattleStage.value ? filters.devLeaderId : undefined,
       page: page.value,
       pageSize: pageSize.value,
       sortField: sortField.value,
@@ -176,6 +244,8 @@ function onReset(): void {
   filters.priority = ''
   filters.status = ''
   filters.moduleId = undefined
+  filters.pmId = undefined
+  filters.devLeaderId = undefined
   page.value = 1
   void load()
 }
@@ -231,6 +301,9 @@ onMounted(() => {
   colcfg.register([
     { key: 'reqNo', label: '需求编号' },
     { key: 'title', label: '需求标题' },
+    { key: 'designUrl', label: '设计文档' },
+    { key: 'pmName', label: '设计人' },
+    { key: 'devLeaderName', label: '负责人' },
     { key: 'moduleName', label: '模块' },
     { key: 'priority', label: '优先级' },
     { key: 'status', label: '状态' },
@@ -241,6 +314,7 @@ onMounted(() => {
     { key: '操作', label: '操作', fixed: true },
   ])
   void dict.load()
+  void loadCandidates()
   void load()
 })
 
@@ -299,6 +373,19 @@ watch(
             <el-option v-for="it in dict.allOf('module')" :key="it.id" :label="it.name" :value="it.id" />
           </el-select>
         </div>
+        <!-- 开发中心：按设计人 / 负责人筛选 -->
+        <div v-if="isBattleStage" class="filter-inline__item">
+          <span class="filter-inline__label">设计人</span>
+          <el-select v-model="filters.pmId" placeholder="全部设计人" clearable filterable style="width: 148px" @change="load">
+            <el-option v-for="p in pmOptions" :key="p.id" :label="`${p.name}（${p.departmentName || p.account}）`" :value="p.id" />
+          </el-select>
+        </div>
+        <div v-if="isBattleStage" class="filter-inline__item">
+          <span class="filter-inline__label">负责人</span>
+          <el-select v-model="filters.devLeaderId" placeholder="全部负责人" clearable filterable style="width: 148px" @change="load">
+            <el-option v-for="d in leaderOptions" :key="d.id" :label="`${d.name}（${d.departmentName || d.account}）`" :value="d.id" />
+          </el-select>
+        </div>
         <div v-if="showStatusColumn" class="filter-inline__item">
           <span class="filter-inline__label">状态</span>
           <el-select v-model="filters.status" placeholder="全部状态" clearable style="width: 132px" @change="load">
@@ -336,6 +423,14 @@ watch(
             :width="36"
             @change="onToggleHidePending"
           />
+          <!-- 开发中心：批量发布上线 -->
+          <el-button
+            v-if="isBattleStage"
+            type="primary"
+            :disabled="!publishableSelected.length"
+            :loading="batchBusy"
+            @click="onBatchPublish"
+          >批量发布上线{{ publishableSelected.length ? `（${publishableSelected.length}）` : '' }}</el-button>
           <ColumnConfig :config="colcfg" title="需求列表" />
           <el-button @click="load">刷新</el-button>
         </div>
@@ -350,7 +445,10 @@ watch(
           :data="items"
           row-key="id"
           @sort-change="onSortChange"
+          @selection-change="onSelectionChange"
         >
+          <el-table-column v-if="isBattleStage" type="selection" width="40" :selectable="(r: DevRequest) => r.status === '开发中心'" />
+
           <template #empty>
             <EmptyIllustration :size="130" text="暂无需求数据" sub-text="可以调整筛选条件，或先去提交一条需求" />
           </template>
@@ -394,6 +492,29 @@ watch(
 
               <template v-else-if="c.key === 'moduleName'">
                 <span class="cell-nowrap">{{ row.moduleName || '—' }}</span>
+              </template>
+
+              <!-- 开发中心专属列：设计文档链接（新窗口打开）/ 设计人 / 负责人 -->
+              <template v-else-if="c.key === 'designUrl'">
+                <a
+                  v-if="row.designUrl"
+                  class="cell-code cell-code--link cell-nowrap"
+                  :href="row.designUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="打开设计文档"
+                >设计文档</a>
+                <span v-else class="text-placeholder">—</span>
+              </template>
+
+              <template v-else-if="c.key === 'pmName'">
+                <span v-if="row.pmName" class="cell-nowrap">{{ row.pmName }}</span>
+                <span v-else class="text-placeholder">—</span>
+              </template>
+
+              <template v-else-if="c.key === 'devLeaderName'">
+                <span v-if="row.devLeaderName" class="cell-nowrap">{{ row.devLeaderName }}</span>
+                <span v-else class="text-placeholder">—</span>
               </template>
 
               <template v-else-if="c.key === 'priority'">
@@ -541,6 +662,11 @@ watch(
   color: #9c6a17;
   font-weight: 500;
   cursor: help;
+}
+
+/* 空值占位（与各列表页一致） */
+.text-placeholder {
+  color: var(--color-text-placeholder);
 }
 
 /* 状态列：状态胶囊 + 可选的待定标记并排 */
