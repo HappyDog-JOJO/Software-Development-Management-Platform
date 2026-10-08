@@ -4,8 +4,7 @@ declare(strict_types=1);
 /**
  * 需求管理模块：需求研发流接口。
  * 流程：需求提交 → 评审池（评审委员，驳回即作废）→ 需求池（产品经理认领）→
- *       设计中心（设计文档/分支/开发负责人）→ 开发中心（开发负责人提交开发完成）→
- *       待发布 → 发布上线（已上线，终态）。
+ *       设计中心（设计文档链接/分支/负责人）→ 开发中心（负责人发布上线）→ 已上线（终态）。
  * 可见范围：评审委员/管理员全量；产品经理可见需求池与自己认领的；
  *           开发负责人/提交人可见自己的。
  * 方案见 docs/需求管理模块-需求方案.md。
@@ -170,6 +169,17 @@ function qly_devreq_filters(): array
         $where .= ' AND i.dev_leader_id = :dlf';
         $params[':dlf'] = $devLeaderId;
     }
+    // 上线时间范围筛选（发布上线记录页）
+    $releasedStart = (string) qly_input('releasedStart', '');
+    if ($releasedStart !== '') {
+        $where .= ' AND i.released_at >= :rls';
+        $params[':rls'] = $releasedStart . ' 00:00:00';
+    }
+    $releasedEnd = (string) qly_input('releasedEnd', '');
+    if ($releasedEnd !== '') {
+        $where .= ' AND i.released_at <= :rle';
+        $params[':rle'] = $releasedEnd . ' 23:59:59';
+    }
     $keyword = (string) qly_input('keyword', '');
     if ($keyword !== '') {
         $where .= ' AND (i.req_no LIKE :kw1 OR i.title LIKE :kw2 OR i.description LIKE :kw3)';
@@ -195,9 +205,14 @@ function qly_api_devreqs_list(): void
     $total = (int) qly_val('SELECT COUNT(*)' . $base . $scopeWhere, array_merge($filterParams, $scopeParams));
 
     // priority 排序固定为：紧急 > 高 > 中 > 低，同级按提交先后（先到先做）
-    if ((string) qly_input('sortField', 'createdAt') === 'priority') {
+    $sortField = (string) qly_input('sortField', 'createdAt');
+    if ($sortField === 'priority') {
         $order = "FIELD(i.priority, '紧急', '高', '中', '低')";
         $dir = 'ASC';
+    } elseif ($sortField === 'releasedAt') {
+        // 发布上线记录页：按上线时间倒序（最近上线在前）
+        $order = 'i.released_at';
+        $dir = strtoupper((string) qly_input('sortOrder', 'DESC')) === 'ASC' ? 'ASC' : 'DESC';
     } else {
         $order = 'i.created_at';
         $dir = strtoupper((string) qly_input('sortOrder', 'DESC')) === 'ASC' ? 'ASC' : 'DESC';
@@ -619,7 +634,7 @@ function qly_api_devreqs_design(): void
     qly_ok(null, '设计已提交，任务进入开发中心');
 }
 
-/** 开发中心发布上线（负责人或管理员，支持批量）→ 需求进入「发布上线」列表（待发布） */
+/** 开发中心发布上线（负责人或管理员，支持批量）→ 直接上线（记录上线时间与操作人） */
 function qly_api_devreqs_battle_publish(): void
 {
     $user = qly_auth_user();
@@ -635,6 +650,7 @@ function qly_api_devreqs_battle_publish(): void
         qly_fail('请选择要发布的需求');
     }
     $isAdmin = qly_has_role($user, [QLY_ROLE_ADMIN]);
+    $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
     $now = date('Y-m-d H:i:s');
     $okCount = 0;
     $skipCount = 0;
@@ -653,54 +669,25 @@ function qly_api_devreqs_battle_publish(): void
             continue;
         }
         qly_update('dev_request', $tid, [
-            'status' => '待发布',
-            'frontline_at' => $now,
+            'status' => '已上线',
+            'released_at' => $now,
+            'released_by' => $name,
             'updated_at' => $now,
         ]);
-        qly_log($user, '需求开发', (string) $row['req_no'], '发布上线：' . $row['title'] . '，进入待发布列表');
-        $publishers = qly_notify_user_ids_by_roles([QLY_ROLE_COMMITTEE, QLY_ROLE_ADMIN]);
-        qly_notify($publishers, '需求待发布上线', '【' . $row['title'] . '】开发完成，请评审委员执行发布', '/dev/reqs/' . $tid, (int) $user['id']);
+        qly_log($user, '需求发布', (string) $row['req_no'], '发布上线：' . $row['title'] . '（负责人直接发布）');
+        $watchIds = array_values(array_unique(array_filter([
+            (int) $row['submitter_id'],
+            (int) ($row['pm_id'] ?? 0),
+            (int) ($row['dev_leader_id'] ?? 0),
+        ])));
+        qly_notify($watchIds, '您的需求已上线', '【' . $row['title'] . '】已正式发布上线', '/dev/reqs/' . $tid, (int) $user['id']);
         $okCount++;
     }
     if ($okCount === 0) {
         qly_fail('没有可发布的需求（需处于开发中心且由您负责，或为管理员）');
     }
-    $msg = '已提交 ' . $okCount . ' 条到发布上线' . ($skipCount > 0 ? '，另有 ' . $skipCount . ' 条已跳过（状态不符或无权限）' : '');
+    $msg = '已上线 ' . $okCount . ' 条' . ($skipCount > 0 ? '，另有 ' . $skipCount . ' 条已跳过（状态不符或无权限）' : '');
     qly_ok(['affected' => $okCount, 'skipped' => $skipCount], $msg);
-}
-
-/** 发布上线：评审委员/管理员 → 已上线（终态） */
-function qly_api_devreqs_release(): void
-{
-    $user = qly_auth_user();
-    if (!qly_can_review_req($user)) {
-        qly_forbidden('仅评审委员或管理员可发布上线');
-    }
-    $id = qly_input_int('id', 0);
-    $comment = trim((string) qly_input('comment', ''));
-    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
-    if (!$row) {
-        qly_fail('需求不存在');
-    }
-    if ((string) $row['status'] !== '待发布') {
-        qly_fail('该需求不在待发布状态');
-    }
-    $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
-    $now = date('Y-m-d H:i:s');
-    qly_update('dev_request', $id, [
-        'status' => '已上线',
-        'released_at' => $now,
-        'released_by' => $name,
-        'updated_at' => $now,
-    ]);
-    qly_log($user, '需求发布', (string) $row['req_no'], '发布上线：' . $row['title'] . ($comment !== '' ? '，说明：' . mb_substr($comment, 0, 80) : ''));
-    $watchIds = array_values(array_unique(array_filter([
-        (int) $row['submitter_id'],
-        (int) ($row['pm_id'] ?? 0),
-        (int) ($row['dev_leader_id'] ?? 0),
-    ])));
-    qly_notify($watchIds, '您的需求已上线', '【' . $row['title'] . '】已正式发布上线', '/dev/reqs/' . $id, (int) $user['id']);
-    qly_ok(null, '已发布，需求已上线');
 }
 
 /** 负责人候选（开发工程师 / 管理员，设计中心指定负责人用） */

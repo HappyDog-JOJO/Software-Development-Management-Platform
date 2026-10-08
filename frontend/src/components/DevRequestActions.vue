@@ -18,7 +18,6 @@ import {
   designDevRequest,
   fetchDevCandidates,
   getDevRequest,
-  releaseDevRequest,
   reviewDevRequest,
   updateDevRequest,
   type DevAttachmentPayload,
@@ -74,9 +73,6 @@ const showDesign = computed(
 const showBattlePublish = computed(
   () => props.req.status === '开发中心' && (admin.value || isDevLeader.value),
 )
-const showRelease = computed(
-  () => props.req.status === '待发布' && canReviewReq(auth.user?.roles),
-)
 /** 修改/删除：提交人本人（自己的）/ 管理员（全部），仅评审池阶段（评审开始后不可改删） */
 const showEdit = computed(
   () => props.req.status === '评审池' && (admin.value || isSubmitter.value),
@@ -88,7 +84,6 @@ const hasActions = computed(
     showClaim.value ||
     showDesign.value ||
     showBattlePublish.value ||
-    showRelease.value ||
     showEdit.value,
 )
 
@@ -121,22 +116,6 @@ async function onClaim(): Promise<void> {
   try {
     await claimDevRequest(props.req.id)
     ElMessage.success('认领成功，已进入设计中心')
-    emit('refresh')
-  } finally {
-    busy.value = false
-  }
-}
-
-async function onRelease(): Promise<void> {
-  await ElMessageBox.confirm(`确定把「${props.req.title}」发布上线吗？上线后需求进入终态。`, '发布上线', {
-    confirmButtonText: '确认发布',
-    cancelButtonText: '取消',
-    type: 'warning',
-  })
-  busy.value = true
-  try {
-    await releaseDevRequest(props.req.id)
-    ElMessage.success('已发布，需求正式上线')
     emit('refresh')
   } finally {
     busy.value = false
@@ -287,17 +266,17 @@ async function onRejectSubmit(): Promise<void> {
   }
 }
 
-/* —— 发布上线（开发中心 → 待发布；负责人或管理员） —— */
+/* —— 发布上线（开发中心 → 已上线；负责人或管理员） —— */
 async function onBattlePublish(): Promise<void> {
   await ElMessageBox.confirm(
-    `确定将「${props.req.title}」发布上线吗？发布后进入「发布上线」列表，等待正式发布。`,
+    `确定将「${props.req.title}」发布上线吗？发布后立即上线（记录上线时间），不可撤回。`,
     '发布上线',
     { confirmButtonText: '确定发布', cancelButtonText: '取消', type: 'warning' },
   )
   busy.value = true
   try {
     await battlePublishDevRequest([props.req.id])
-    ElMessage.success('已提交，需求进入发布上线列表')
+    ElMessage.success('已发布上线')
     emit('refresh')
   } finally {
     busy.value = false
@@ -385,11 +364,8 @@ async function onDesignSubmit(): Promise<void> {
     <!-- 设计中心 -->
     <el-button v-if="showDesign" v-bind="btnPrimary" @click="openDesign">提交设计</el-button>
 
-    <!-- 开发中心：发布上线（进入发布上线列表） -->
+    <!-- 开发中心：发布上线（立即上线，记录上线时间） -->
     <el-button v-if="showBattlePublish" v-bind="btnPrimary" :loading="busy" @click="onBattlePublish">发布上线</el-button>
-
-    <!-- 待发布 -->
-    <el-button v-if="showRelease" v-bind="btnPrimary" :loading="busy" @click="onRelease">执行发布</el-button>
 
     <!-- 修改 / 删除（评审前；提交人本人或管理员） -->
     <el-button v-if="showEdit" v-bind="btnPrimary" @click="openEdit">修改</el-button>

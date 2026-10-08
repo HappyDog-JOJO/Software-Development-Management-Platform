@@ -2,16 +2,15 @@
 
 import type { DevPriority, DevStatus } from '@/types'
 
-/** 主流程六站（时间线顺序；已驳回/已取消为分支终态） */
-export const DEV_STAGES: DevStatus[] = ['评审池', '需求池', '设计中心', '开发中心', '待发布', '已上线']
+/** 主流程五站（时间线顺序；已驳回/已取消为分支终态） */
+export const DEV_STAGES: DevStatus[] = ['评审池', '需求池', '设计中心', '开发中心', '已上线']
 
-/** 全部状态（列表筛选用） */
+/** 全部状态（列表筛选用；「待发布」仅历史数据保留，不再作为筛选入口） */
 export const DEV_STATUS_OPTIONS: DevStatus[] = [
   '评审池',
   '需求池',
   '设计中心',
   '开发中心',
-  '待发布',
   '已上线',
   '已驳回',
   '已取消',

@@ -21,7 +21,7 @@ import { useColumnWidths } from '@/composables/useColumnWidths'
 import { useColumnConfig } from '@/composables/useColumnConfig'
 import type { DevCandidate, DevPriority, DevRequest, DevStatus } from '@/types'
 
-const props = defineProps<{ stage?: DevStatus; mine?: boolean }>()
+const props = defineProps<{ stage?: DevStatus; mine?: boolean; released?: boolean }>()
 
 /** 表格列宽记忆（按当前用户隔离，拖动后自动记住） */
 const colw = useColumnWidths('dev-reqs')
@@ -55,6 +55,7 @@ const DEV_COL_DEFS: Record<string, DevColDef> = {
   submitterDepartmentName: { label: '提交部门', width: 116 },
   owner: { label: '处理人', minWidth: 120 },
   createdAt: { label: '提交时间', width: 150, sortable: true, align: 'center' },
+  releasedAt: { label: '上线时间', width: 150, sortable: true, align: 'center' },
 }
 
 const dict = useDictStore()
@@ -69,13 +70,16 @@ const pageSize = ref(10)
 const showStatusColumn = computed(() => !props.stage)
 /** 开发中心页：展示设计文档/设计人/负责人三列（其余页面不展示） */
 const isBattleStage = computed(() => props.stage === '开发中心')
+/** 发布上线记录页：展示上线时间列 + 时间筛选，不展示操作列 */
+const isReleasedStage = computed(() => props.released === true)
 
 /**
  * 按「列配置」的顺序与显隐生成实际渲染的列。
  * 条件列：状态列只在「我的需求」等未按环节过滤的页面展示；
  * 处理人列在「我的需求」（提交人视角）与「评审池」（尚未分配负责人，只有待评审/待定）
  * 不展示——评审池的待定标记改在标题列展示，负责人明细看详情页；
- * 设计文档/设计人/负责人三列仅在「开发中心」展示（配合筛选）。
+ * 设计文档/设计人/负责人三列仅在「开发中心」展示（配合筛选）；
+ * 上线时间列仅在「发布上线」记录页展示。
  */
 const devColumns = computed(() =>
   colcfg
@@ -93,6 +97,9 @@ const devColumns = computed(() =>
       if (['designUrl', 'pmName', 'devLeaderName'].includes(c.key) && !isBattleStage.value) {
         return false
       }
+      if (c.key === 'releasedAt' && !isReleasedStage.value) {
+        return false
+      }
       return true
     })
     .map((c) => ({ key: c.key, ...DEV_COL_DEFS[c.key] })),
@@ -108,9 +115,11 @@ const stageDesc = computed(() => {
     case '设计中心':
       return '产品经理填写设计文档链接、指定开发分支与负责人。'
     case '开发中心':
-      return '负责人按分支完成开发后点「发布上线」提交（负责人或管理员，可批量），进入发布上线列表等待正式发布。'
-    case '待发布':
-      return '开发完成的需求在此等待发布；评审委员执行发布后正式上线。'
+      return '负责人按分支完成开发后点「发布上线」立即上线（负责人或管理员，可批量）。'
+    case '已上线':
+      return props.released
+        ? '已上线需求记录（按上线时间倒序）：支持按上线时间筛选。'
+        : '已上线需求。'
     default:
       return '您提交的全部需求与最新进度。'
   }
@@ -123,6 +132,9 @@ const filters = reactive({
   moduleId: undefined as number | undefined,
   pmId: undefined as number | undefined,
   devLeaderId: undefined as number | undefined,
+  /** 上线时间范围（发布上线记录页） */
+  releasedStart: '',
+  releasedEnd: '',
 })
 
 /** 开发中心筛选候选：设计人（产品经理/管理员）与负责人（开发工程师/管理员） */
@@ -142,7 +154,7 @@ async function loadCandidates(): Promise<void> {
   }
 }
 
-/** 批量发布（开发中心）：勾选后一次提交到发布上线列表 */
+/** 批量发布（开发中心）：勾选后一次性发布上线（直接上线） */
 const selectedRows = ref<DevRequest[]>([])
 const batchBusy = ref(false)
 function onSelectionChange(rows: DevRequest[]): void {
@@ -157,14 +169,14 @@ async function onBatchPublish(): Promise<void> {
     return
   }
   await ElMessageBox.confirm(
-    `确定将勾选的 ${ids.length} 条需求发布上线吗？发布后进入「发布上线」列表，等待正式发布。`,
+    `确定将勾选的 ${ids.length} 条需求发布上线吗？发布后立即上线（记录上线时间），不可撤回。`,
     '批量发布上线',
     { confirmButtonText: '确定发布', cancelButtonText: '取消', type: 'warning' },
   )
   batchBusy.value = true
   try {
     const res = await battlePublishDevRequest(ids)
-    ElMessage.success(`已提交 ${res.affected} 条到发布上线${res.skipped > 0 ? `，${res.skipped} 条已跳过` : ''}`)
+    ElMessage.success(`已上线 ${res.affected} 条${res.skipped > 0 ? `，${res.skipped} 条已跳过` : ''}`)
     selectedRows.value = []
     await load()
   } finally {
@@ -199,12 +211,15 @@ const activeFilterCount = computed(() => {
   if (filters.moduleId) n += 1
   if (filters.pmId) n += 1
   if (filters.devLeaderId) n += 1
+  if (filters.releasedStart || filters.releasedEnd) n += 1
   if (filters.keyword) n += 1
   return n
 })
 
-/** 需求池默认按优先级排序，其余页面默认按提交时间倒序 */
-const sortField = ref<'createdAt' | 'priority'>(props.stage === '需求池' ? 'priority' : 'createdAt')
+/** 发布上线记录页默认按上线时间倒序；需求池默认按优先级；其余按提交时间倒序 */
+const sortField = ref<'createdAt' | 'priority' | 'releasedAt'>(
+  props.released ? 'releasedAt' : props.stage === '需求池' ? 'priority' : 'createdAt',
+)
 const sortOrder = ref<'ASC' | 'DESC'>('DESC')
 
 async function load(): Promise<void> {
@@ -219,6 +234,8 @@ async function load(): Promise<void> {
       moduleId: filters.moduleId,
       pmId: isBattleStage.value ? filters.pmId : undefined,
       devLeaderId: isBattleStage.value ? filters.devLeaderId : undefined,
+      releasedStart: isReleasedStage.value ? filters.releasedStart || undefined : undefined,
+      releasedEnd: isReleasedStage.value ? filters.releasedEnd || undefined : undefined,
       page: page.value,
       pageSize: pageSize.value,
       sortField: sortField.value,
@@ -246,6 +263,8 @@ function onReset(): void {
   filters.moduleId = undefined
   filters.pmId = undefined
   filters.devLeaderId = undefined
+  filters.releasedStart = ''
+  filters.releasedEnd = ''
   page.value = 1
   void load()
 }
@@ -265,7 +284,13 @@ function onSortChange(payload: { prop: string; order: string | null }): void {
   if (!payload.order) {
     return
   }
-  sortField.value = payload.prop === 'priority' ? 'priority' : 'createdAt'
+  if (payload.prop === 'priority') {
+    sortField.value = 'priority'
+  } else if (payload.prop === 'releasedAt') {
+    sortField.value = 'releasedAt'
+  } else {
+    sortField.value = 'createdAt'
+  }
   sortOrder.value = payload.order === 'ascending' ? 'ASC' : 'DESC'
   void load()
 }
@@ -311,6 +336,7 @@ onMounted(() => {
     { key: 'submitterDepartmentName', label: '提交部门' },
     { key: 'owner', label: '处理人' },
     { key: 'createdAt', label: '提交时间' },
+    { key: 'releasedAt', label: '上线时间' },
     { key: '操作', label: '操作', fixed: true },
   ])
   void dict.load()
@@ -392,6 +418,29 @@ watch(
             <el-option v-for="s in DEV_STATUS_OPTIONS" :key="s" :label="s" :value="s" />
           </el-select>
         </div>
+        <!-- 发布上线记录页：按上线时间范围筛选 -->
+        <template v-if="isReleasedStage">
+          <div class="filter-inline__item">
+            <span class="filter-inline__label">上线时间</span>
+            <el-date-picker
+              v-model="filters.releasedStart"
+              type="date"
+              placeholder="开始日期"
+              value-format="YYYY-MM-DD"
+              style="width: 148px"
+              @change="load"
+            />
+            <span class="filter-inline__label">至</span>
+            <el-date-picker
+              v-model="filters.releasedEnd"
+              type="date"
+              placeholder="结束日期"
+              value-format="YYYY-MM-DD"
+              style="width: 148px"
+              @change="load"
+            />
+          </div>
+        </template>
         <div class="filter-inline__item filter-inline__item--keyword">
           <el-input
             v-model="filters.keyword"
@@ -560,11 +609,32 @@ watch(
               <template v-else-if="c.key === 'createdAt'">
                 <span class="cell-nowrap">{{ fmtDateTime(row.createdAt) }}</span>
               </template>
+
+              <!-- 发布上线记录页：上线时间（含操作人悬停提示） -->
+              <template v-else-if="c.key === 'releasedAt'">
+                <el-tooltip
+                  v-if="row.releasedAt"
+                  :content="`发布人：${row.releasedBy || '—'}`"
+                  placement="top"
+                  effect="light"
+                  :show-after="200"
+                >
+                  <span class="cell-nowrap">{{ fmtDateTime(row.releasedAt) }}</span>
+                </el-tooltip>
+                <span v-else class="text-placeholder">—</span>
+              </template>
             </template>
           </el-table-column>
 
-          <!-- 操作列：编号列可点击进详情，不再重复放「详情」按钮 -->
-          <el-table-column label="操作" :width="colw.bind('操作', { width: 220 }).width" fixed="right" align="center">
+          <!-- 操作列：编号列可点击进详情，不再重复放「详情」按钮。
+               发布上线记录页（已上线终态）无操作，不展示该列。 -->
+          <el-table-column
+            v-if="!isReleasedStage"
+            label="操作"
+            :width="colw.bind('操作', { width: 220 }).width"
+            fixed="right"
+            align="center"
+          >
             <template #default="{ row }">
               <div class="cell--actions">
                 <DevRequestActions :req="row" link @refresh="load" />

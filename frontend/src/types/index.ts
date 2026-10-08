@@ -476,9 +476,12 @@ export interface DevQuery {
   pmId?: number
   /** 负责人筛选（开发中心） */
   devLeaderId?: number
+  /** 上线时间范围筛选（发布上线记录页） */
+  releasedStart?: string
+  releasedEnd?: string
   page?: number
   pageSize?: number
-  sortField?: 'createdAt' | 'priority'
+  sortField?: 'createdAt' | 'priority' | 'releasedAt'
   sortOrder?: 'ASC' | 'DESC'
 }
 

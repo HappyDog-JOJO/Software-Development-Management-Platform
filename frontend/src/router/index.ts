@@ -128,7 +128,7 @@ const routes: RouteRecordRaw[] = [
         path: 'dev/release',
         name: 'DevRelease',
         component: () => import('@/views/dev/DevListView.vue'),
-        props: { stage: '待发布' as DevStatus },
+        props: { stage: '已上线' as DevStatus, released: true },
         meta: { title: '发布上线', roles: [ROLE_COMMITTEE, ROLE_ADMIN], icon: 'release', group: '开发管理' },
       },
       {

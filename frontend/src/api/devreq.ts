@@ -75,14 +75,9 @@ export function designDevRequest(id: number, payload: DesignPayload): Promise<nu
   return http.post<null>('/api.php?r=devreqs/design', { id, ...payload })
 }
 
-/** 开发中心发布上线（负责人/管理员，支持批量）：开发中心 → 待发布（发布上线列表） */
+/** 开发中心发布上线（负责人/管理员，支持批量）：开发中心 → 已上线（记录上线时间与操作人） */
 export function battlePublishDevRequest(ids: number[]): Promise<{ affected: number; skipped: number }> {
   return http.post<{ affected: number; skipped: number }>('/api.php?r=devreqs/battle-publish', { ids })
-}
-
-/** 执行发布（评审委员/管理员）：待发布 → 已上线 */
-export function releaseDevRequest(id: number, comment = ''): Promise<null> {
-  return http.post<null>('/api.php?r=devreqs/release', { id, comment })
 }
 
 /** 负责人候选（开发工程师 / 管理员） */
