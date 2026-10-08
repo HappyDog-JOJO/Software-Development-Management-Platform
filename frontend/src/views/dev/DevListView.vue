@@ -115,9 +115,11 @@ function toggleFilter(): void {
   localStorage.setItem(FILTER_COLLAPSE_KEY, filterCollapsed.value ? '1' : '0')
 }
 
-/** 隐藏待定开关（我的需求页；记忆用户选择，默认开启=隐藏） */
+/** 隐藏待定开关（我的需求 / 评审池；记忆用户选择，默认开启=隐藏） */
 const HIDE_PENDING_KEY = 'command_dev_reqs_hide_pending'
 const hidePending = ref(localStorage.getItem(HIDE_PENDING_KEY) !== '0')
+/** 开关适用的页面：我的需求 + 评审池（评审池待办以未评审的为主，待定默认收起） */
+const showHidePending = computed(() => props.mine === true || props.stage === '评审池')
 function onToggleHidePending(): void {
   localStorage.setItem(HIDE_PENDING_KEY, hidePending.value ? '1' : '0')
   page.value = 1
@@ -144,7 +146,7 @@ async function load(): Promise<void> {
     const res = await fetchDevRequests({
       status: props.stage ?? (filters.status || undefined),
       mine: props.mine ? '1' : undefined,
-      hidePending: props.mine && hidePending.value ? '1' : undefined,
+      hidePending: showHidePending.value && hidePending.value ? '1' : undefined,
       keyword: filters.keyword.trim() || undefined,
       priority: filters.priority || undefined,
       moduleId: filters.moduleId,
@@ -325,9 +327,9 @@ watch(
     <div class="moon-card moon-card--tight">
       <div class="toolbar toolbar--actions-only">
         <div class="toolbar__actions">
-          <!-- 我的需求：隐藏评审待定的需求（默认开启，记忆选择） -->
+          <!-- 我的需求 / 评审池：隐藏评审待定的需求（默认开启，记忆选择） -->
           <el-switch
-            v-if="mine"
+            v-if="showHidePending"
             v-model="hidePending"
             active-text="隐藏待定"
             :width="36"
