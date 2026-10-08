@@ -429,8 +429,10 @@ async function loadBootstrap(): Promise<void> {
         <div v-if="!bootstrapped" class="boot-loading">
           <MoonLoader text="正在加载基础数据…" />
         </div>
-        <router-view v-else v-slot="{ Component }">
-          <component :is="Component" />
+        <router-view v-else v-slot="{ Component, route: r }">
+          <!-- 按 route.name 加 key：同一组件被多个菜单页复用（如需求的 6 个环节页）时，
+               让每个页面拥有独立实例，避免跨页共享组件内部状态（列宽/列配置等） -->
+          <component :is="Component" :key="r.name || r.path" />
         </router-view>
       </main>
     </div>

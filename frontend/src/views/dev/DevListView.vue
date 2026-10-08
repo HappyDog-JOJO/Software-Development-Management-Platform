@@ -23,11 +23,34 @@ import type { DevCandidate, DevPriority, DevRequest, DevStatus } from '@/types'
 
 const props = defineProps<{ stage?: DevStatus; mine?: boolean; released?: boolean }>()
 
-/** 表格列宽记忆（按当前用户隔离，拖动后自动记住） */
-const colw = useColumnWidths('dev-reqs')
+/**
+ * 本列表页的存储标识（列宽记忆 / 列配置共用）。
+ * 本组件被 6 个环节页复用（我的需求/评审池/需求池/设计中心/开发中心/发布上线）：
+ * 路由侧已给各页独立的组件实例（router-view 按 route.name 加 key），
+ * 这里只需在实例创建时按当前页取一个固定标识，页与页之间互不影响。
+ */
+const tableId = (() => {
+  if (props.released) return 'dev-released'
+  if (props.mine) return 'dev-mine'
+  switch (props.stage) {
+    case '评审池':
+      return 'dev-review'
+    case '需求池':
+      return 'dev-pool'
+    case '设计中心':
+      return 'dev-design'
+    case '开发中心':
+      return 'dev-battle'
+    default:
+      return 'dev-all'
+  }
+})()
 
-/** 列配置（按当前用户隔离）：控制列的显隐与顺序 */
-const colcfg = useColumnConfig('dev-reqs')
+/** 表格列宽记忆（按「用户 + 页面」隔离，拖动后自动记住） */
+const colw = useColumnWidths(tableId)
+
+/** 列配置（按「用户 + 页面」隔离）：控制列的显隐与顺序 */
+const colcfg = useColumnConfig(tableId)
 
 /**
  * 列定义表：key → 渲染属性。
@@ -295,8 +318,8 @@ function goDetail(row: DevRequest): void {
   void router.push(`/dev/reqs/${row.id}`)
 }
 
-onMounted(() => {
-  // 登记可配置列（顺序即默认顺序；fixed 列不参与配置）
+/** 登记可配置列（顺序即默认顺序；fixed 列不参与配置）。页面切换（键变化）时需重新登记 */
+function registerColumns(): void {
   colcfg.register([
     { key: 'reqNo', label: '需求编号' },
     { key: 'title', label: '需求标题' },
@@ -312,21 +335,15 @@ onMounted(() => {
     { key: 'releasedAt', label: '上线时间' },
     { key: '操作', label: '操作', fixed: true },
   ])
+}
+
+onMounted(() => {
+  registerColumns()
   void dict.load()
   void loadCandidates()
   void load()
 })
 
-watch(
-  () => props.stage,
-  () => {
-    page.value = 1
-    if (props.stage === '需求池') {
-      sortField.value = 'priority'
-    }
-    void load()
-  },
-)
 watch(
   () => route.query,
   () => {
