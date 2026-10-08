@@ -53,7 +53,6 @@ const DEV_COL_DEFS: Record<string, DevColDef> = {
   status: { label: '状态', width: 100, align: 'center' },
   submitterName: { label: '提交人', width: 96 },
   submitterDepartmentName: { label: '提交部门', width: 116 },
-  owner: { label: '处理人', minWidth: 120 },
   createdAt: { label: '提交时间', width: 150, sortable: true, align: 'center' },
   releasedAt: { label: '上线时间', width: 150, sortable: true, align: 'center' },
 }
@@ -76,10 +75,10 @@ const isReleasedStage = computed(() => props.released === true)
 /**
  * 按「列配置」的顺序与显隐生成实际渲染的列。
  * 条件列：状态列只在「我的需求」等未按环节过滤的页面展示；
- * 处理人列在「我的需求」（提交人视角）与「评审池」（尚未分配负责人，只有待评审/待定）
- * 不展示——评审池的待定标记改在标题列展示，负责人明细看详情页；
  * 设计文档/设计人/负责人三列仅在「开发中心」展示（配合筛选）；
  * 上线时间列仅在「发布上线」记录页展示。
+ * （「处理人」列已整体移除：各环节显示的多为与状态重复的信息，
+ *   设计/开发负责人由开发中心的设计人、负责人列承载，明细看详情页。）
  */
 const devColumns = computed(() =>
   colcfg
@@ -89,9 +88,6 @@ const devColumns = computed(() =>
         return false
       }
       if (c.key === 'status' && !showStatusColumn.value) {
-        return false
-      }
-      if (c.key === 'owner' && (props.mine || props.stage === '评审池')) {
         return false
       }
       if (['designUrl', 'pmName', 'devLeaderName'].includes(c.key) && !isBattleStage.value) {
@@ -299,28 +295,6 @@ function goDetail(row: DevRequest): void {
   void router.push(`/dev/reqs/${row.id}`)
 }
 
-/** 环节 → 处理人说明：有专人负责时显示「角色：姓名」，等待接手或终态时显示环节状态 */
-function ownerLabel(row: DevRequest): string {
-  switch (row.status) {
-    case '评审池':
-      return '待评审'
-    case '需求池':
-      return '待认领'
-    case '设计中心':
-      return row.pmName ? `设计：${row.pmName}` : '待设计'
-    case '开发中心':
-      return row.devLeaderName ? `开发：${row.devLeaderName}` : '待开发'
-    case '待发布':
-      return '待发布'
-    case '已上线':
-      return '已上线'
-    case '已驳回':
-      return '评审驳回（作废）'
-    default:
-      return '已取消'
-  }
-}
-
 onMounted(() => {
   // 登记可配置列（顺序即默认顺序；fixed 列不参与配置）
   colcfg.register([
@@ -334,7 +308,6 @@ onMounted(() => {
     { key: 'status', label: '状态' },
     { key: 'submitterName', label: '提交人' },
     { key: 'submitterDepartmentName', label: '提交部门' },
-    { key: 'owner', label: '处理人' },
     { key: 'createdAt', label: '提交时间' },
     { key: 'releasedAt', label: '上线时间' },
     { key: '操作', label: '操作', fixed: true },
@@ -526,7 +499,7 @@ watch(
                   <el-tooltip :content="row.title" placement="top" effect="light" :show-after="200">
                     <span class="cell-ellipsis">{{ row.title }}</span>
                   </el-tooltip>
-                  <!-- 评审池页处理人列隐藏后，待定标记改在此展示（悬停看备注） -->
+                  <!-- 评审池的待定标记在此展示（悬停看备注；处理人列已整体移除） -->
                   <el-tooltip
                     v-if="props.stage === '评审池' && row.reviewPending"
                     :content="`待定备注：${row.reviewComment || ''}`"
@@ -591,19 +564,6 @@ watch(
 
               <template v-else-if="c.key === 'submitterDepartmentName'">
                 <span class="cell-nowrap">{{ row.submitterDepartmentName || '未分配部门' }}</span>
-              </template>
-
-              <template v-else-if="c.key === 'owner'">
-                <el-tooltip
-                  v-if="row.reviewPending"
-                  :content="`待定备注：${row.reviewComment || ''}`"
-                  placement="top"
-                  effect="light"
-                  :show-after="200"
-                >
-                  <span class="cell-nowrap owner-pending">待定</span>
-                </el-tooltip>
-                <span v-else class="cell-nowrap">{{ ownerLabel(row) }}</span>
               </template>
 
               <template v-else-if="c.key === 'createdAt'">
