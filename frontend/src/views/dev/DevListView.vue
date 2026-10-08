@@ -43,7 +43,7 @@ interface DevColDef {
 
 const DEV_COL_DEFS: Record<string, DevColDef> = {
   reqNo: { label: '需求编号', width: 200 },
-  title: { label: '需求标题', minWidth: 180, overflow: true },
+  title: { label: '需求标题', minWidth: 180 },
   moduleName: { label: '模块', width: 80 },
   priority: { label: '优先级', width: 78, align: 'center', sortable: true },
   status: { label: '状态', width: 100, align: 'center' },
@@ -66,8 +66,9 @@ const showStatusColumn = computed(() => !props.stage)
 
 /**
  * 按「列配置」的顺序与显隐生成实际渲染的列。
- * 条件列：状态列只在「我的需求」等未按环节过滤的页面展示；处理人列在「我的需求」不展示
- * （提交人视角下多为待评审/待认领等状态重复信息，负责人明细看详情页）。
+ * 条件列：状态列只在「我的需求」等未按环节过滤的页面展示；
+ * 处理人列在「我的需求」（提交人视角）与「评审池」（尚未分配负责人，只有待评审/待定）
+ * 不展示——评审池的待定标记改在标题列展示，负责人明细看详情页。
  */
 const devColumns = computed(() =>
   colcfg
@@ -77,7 +78,7 @@ const devColumns = computed(() =>
         c.visible &&
         DEV_COL_DEFS[c.key] &&
         (c.key !== 'status' || showStatusColumn.value) &&
-        (c.key !== 'owner' || !props.mine),
+        (c.key !== 'owner' || (!props.mine && props.stage !== '评审池')),
     )
     .map((c) => ({ key: c.key, ...DEV_COL_DEFS[c.key] })),
 )
@@ -86,7 +87,7 @@ const stageLabel = computed(() => (props.mine ? '我的需求' : (props.stage ??
 const stageDesc = computed(() => {
   switch (props.stage) {
     case '评审池':
-      return '所有新需求在此等待评审，任一评审委员通过即进入需求池；驳回则需求作废。'
+      return '所有新需求在此等待评审：通过即进入需求池，待定暂留本池（可再改判），驳回则需求作废。'
     case '需求池':
       return '评审通过的需求在此集结（按优先级排序），产品经理从中挑选任务认领设计。'
     case '设计中心':
@@ -374,7 +375,21 @@ watch(
               </template>
 
               <template v-else-if="c.key === 'title'">
-                <span class="cell-ellipsis">{{ row.title }}</span>
+                <span class="title-cell">
+                  <el-tooltip :content="row.title" placement="top" effect="light" :show-after="200">
+                    <span class="cell-ellipsis">{{ row.title }}</span>
+                  </el-tooltip>
+                  <!-- 评审池页处理人列隐藏后，待定标记改在此展示（悬停看备注） -->
+                  <el-tooltip
+                    v-if="props.stage === '评审池' && row.reviewPending"
+                    :content="`待定备注：${row.reviewComment || ''}`"
+                    placement="top"
+                    effect="light"
+                    :show-after="200"
+                  >
+                    <span class="owner-pending">待定</span>
+                  </el-tooltip>
+                </span>
               </template>
 
               <template v-else-if="c.key === 'moduleName'">
@@ -534,5 +549,18 @@ watch(
   align-items: center;
   gap: 6px;
   white-space: nowrap;
+}
+
+/* 标题单元格：标题（超出省略，悬停看全文）+ 可选的待定标记 */
+.title-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.title-cell .cell-ellipsis {
+  flex: 1;
+  min-width: 0;
 }
 </style>
