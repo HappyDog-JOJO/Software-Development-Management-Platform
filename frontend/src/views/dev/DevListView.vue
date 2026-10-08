@@ -115,6 +115,15 @@ function toggleFilter(): void {
   localStorage.setItem(FILTER_COLLAPSE_KEY, filterCollapsed.value ? '1' : '0')
 }
 
+/** 隐藏待定开关（我的需求页；记忆用户选择，默认开启=隐藏） */
+const HIDE_PENDING_KEY = 'command_dev_reqs_hide_pending'
+const hidePending = ref(localStorage.getItem(HIDE_PENDING_KEY) !== '0')
+function onToggleHidePending(): void {
+  localStorage.setItem(HIDE_PENDING_KEY, hidePending.value ? '1' : '0')
+  page.value = 1
+  void load()
+}
+
 /** 已选筛选条件数量（折叠时提示用） */
 const activeFilterCount = computed(() => {
   let n = 0
@@ -135,6 +144,7 @@ async function load(): Promise<void> {
     const res = await fetchDevRequests({
       status: props.stage ?? (filters.status || undefined),
       mine: props.mine ? '1' : undefined,
+      hidePending: props.mine && hidePending.value ? '1' : undefined,
       keyword: filters.keyword.trim() || undefined,
       priority: filters.priority || undefined,
       moduleId: filters.moduleId,
@@ -315,6 +325,14 @@ watch(
     <div class="moon-card moon-card--tight">
       <div class="toolbar toolbar--actions-only">
         <div class="toolbar__actions">
+          <!-- 我的需求：隐藏评审待定的需求（默认开启，记忆选择） -->
+          <el-switch
+            v-if="mine"
+            v-model="hidePending"
+            active-text="隐藏待定"
+            :width="36"
+            @change="onToggleHidePending"
+          />
           <ColumnConfig :config="colcfg" title="需求列表" />
           <el-button @click="load">刷新</el-button>
         </div>
@@ -366,7 +384,18 @@ watch(
               </template>
 
               <template v-else-if="c.key === 'status'">
-                <span :class="DEV_STATUS_CLASS[row.status as keyof typeof DEV_STATUS_CLASS]">{{ row.status }}</span>
+                <span class="status-cell">
+                  <span :class="DEV_STATUS_CLASS[row.status as keyof typeof DEV_STATUS_CLASS]">{{ row.status }}</span>
+                  <el-tooltip
+                    v-if="row.reviewPending"
+                    :content="`待定备注：${row.reviewComment || ''}`"
+                    placement="top"
+                    effect="light"
+                    :show-after="200"
+                  >
+                    <span class="owner-pending">待定</span>
+                  </el-tooltip>
+                </span>
               </template>
 
               <template v-else-if="c.key === 'submitterName'">
@@ -377,7 +406,7 @@ watch(
                 <span class="cell-nowrap">{{ row.submitterDepartmentName || '未分配部门' }}</span>
               </template>
 
-                            <template v-else-if="c.key === 'owner'">
+              <template v-else-if="c.key === 'owner'">
                 <el-tooltip
                   v-if="row.reviewPending"
                   :content="`待定备注：${row.reviewComment || ''}`"
@@ -495,5 +524,13 @@ watch(
   color: #9c6a17;
   font-weight: 500;
   cursor: help;
+}
+
+/* 状态列：状态胶囊 + 可选的待定标记并排 */
+.status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 </style>

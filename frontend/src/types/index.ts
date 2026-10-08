@@ -468,6 +468,8 @@ export interface DevQuery {
   keyword?: string
   /** 只看我自己提交的 */
   mine?: '1'
+  /** 隐藏评审待定的需求（我的需求页开关） */
+  hidePending?: '1'
   page?: number
   pageSize?: number
   sortField?: 'createdAt' | 'priority'

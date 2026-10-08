@@ -154,6 +154,10 @@ function qly_devreq_filters(): array
         $where .= ' AND i.submitter_id = :mine';
         $params[':mine'] = (int) qly_current_user()['id'];
     }
+    // 隐藏评审待定的需求（我的需求页开关，默认开启）
+    if ((string) qly_input('hidePending', '') === '1') {
+        $where .= ' AND i.review_pending = 0';
+    }
     $keyword = (string) qly_input('keyword', '');
     if ($keyword !== '') {
         $where .= ' AND (i.req_no LIKE :kw1 OR i.title LIKE :kw2 OR i.description LIKE :kw3)';
