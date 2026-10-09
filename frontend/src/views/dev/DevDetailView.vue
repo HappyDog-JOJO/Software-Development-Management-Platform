@@ -8,7 +8,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getDevRequest } from '@/api/devreq'
-import { DEV_PRIORITY_CLASS, DEV_STAGES, DEV_STATUS_CLASS, devStageIndex } from '@/constants/devreq'
+import { DEV_PRIORITY_TAG, DEV_STAGES, DEV_STATUS_TAG, devStageIndex, type DevTagType } from '@/constants/devreq'
 import { logTypeClass } from '@/constants/issue'
 import DevRequestActions from '@/components/DevRequestActions.vue'
 import RoleTag from '@/components/RoleTag.vue'
@@ -34,6 +34,17 @@ const stepActive = computed(() => {
 const isCancelled = computed(() => detail.value?.status === '已取消')
 /** 评审驳回（作废）：时间线停在评审池，轨道高亮转为红色语义 */
 const isRejected = computed(() => detail.value?.status === '已驳回')
+
+/**
+ * el-tag 属性助手：把「灰色哨兵」转成 info 类型 + 灰色覆盖类，
+ * 其余类型原样传给 el-tag（避免直接在模板里做类型断言）。
+ */
+function tagProps(t: DevTagType): { type: 'primary' | 'success' | 'warning' | 'danger' | 'info'; class: string } {
+  if (t === 'grey') {
+    return { type: 'info', class: 'tag--grey' }
+  }
+  return { type: t, class: '' }
+}
 
 async function load(): Promise<void> {
   if (!reqId.value) return
@@ -131,10 +142,13 @@ watch(reqId, load)
               <span class="issue-head__no">{{ detail.reqNo }}</span>
             </div>
             <div class="issue-head__tags">
-              <span :class="DEV_STATUS_CLASS[detail.status as keyof typeof DEV_STATUS_CLASS]">{{ detail.status }}</span>
-              <span :class="DEV_PRIORITY_CLASS[detail.priority as keyof typeof DEV_PRIORITY_CLASS]">{{ detail.priority }}</span>
-              <span v-if="detail.moduleName" class="pill pill--primary">{{ detail.moduleName }}</span>
-              <span v-else class="pill pill--grey">未分类</span>
+              <el-tag v-bind="tagProps(DEV_STATUS_TAG[detail.status])" effect="light" size="small">
+                {{ detail.status }}
+              </el-tag>
+              <el-tag v-bind="tagProps(DEV_PRIORITY_TAG[detail.priority])" effect="light" size="small">
+                {{ detail.priority }}
+              </el-tag>
+              <el-tag type="primary" effect="light" size="small">{{ detail.moduleName || '未分类' }}</el-tag>
               <el-tooltip
                 v-if="detail.reviewPending"
                 :content="`待定备注：${detail.reviewComment || ''}`"
@@ -142,7 +156,7 @@ watch(reqId, load)
                 effect="light"
                 :show-after="200"
               >
-                <span class="pill pill--yellow">待定</span>
+                <el-tag type="warning" effect="light" size="small">待定</el-tag>
               </el-tooltip>
             </div>
           </div>
@@ -437,6 +451,13 @@ watch(reqId, load)
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+}
+
+/* 灰色语义 tag（el-tag 无 grey 类型，用 info 类型 + 本类覆盖为灰蓝色） */
+.issue-head__tags :deep(.tag--grey) {
+  --el-tag-bg-color: var(--color-greyblue-tint);
+  --el-tag-border-color: transparent;
+  --el-tag-text-color: #5d688e;
 }
 
 .issue-head__aside {

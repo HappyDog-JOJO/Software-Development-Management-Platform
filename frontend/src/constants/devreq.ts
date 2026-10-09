@@ -28,6 +28,29 @@ export const DEV_STATUS_CLASS: Record<DevStatus, string> = {
   已取消: 'pill pill--grey',
 }
 
+/** el-tag 类型；'grey' 为自定义哨兵（el-tag 无灰色类型，渲染时搭配 .tag--grey 覆盖保持灰色语义） */
+export type DevTagType = 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'grey'
+
+/** 状态 → el-tag 类型（详情页头部标签等） */
+export const DEV_STATUS_TAG: Record<DevStatus, DevTagType> = {
+  评审池: 'warning',
+  需求池: 'primary',
+  设计中心: 'primary',
+  开发中心: 'danger',
+  待发布: 'primary',
+  已上线: 'success',
+  已驳回: 'danger',
+  已取消: 'grey',
+}
+
+/** 优先级 → el-tag 类型（详情页头部标签等） */
+export const DEV_PRIORITY_TAG: Record<DevPriority, DevTagType> = {
+  紧急: 'danger',
+  高: 'warning',
+  中: 'primary',
+  低: 'grey',
+}
+
 /** 优先级 → pill 样式类（紧急红 / 高橙 / 中蓝 / 低灰，对齐方案语义色） */
 export const DEV_PRIORITY_CLASS: Record<DevPriority, string> = {
   紧急: 'pill pill--red',
