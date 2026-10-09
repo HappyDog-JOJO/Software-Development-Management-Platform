@@ -31,7 +31,7 @@ const demoAccounts = [
   { account: 'manager01', password: '123456', role: '销售经理' },
 ]
 
-const sellingPoints = ['统一需求入口，想法不再散落各处', '评审开发留痕，进度可追溯可审计', '质量验收把关，上线成果全员可见']
+const sellingPoints = ['统一需求入口，想法不再散落各处', '评审开发留痕，进度可追溯可审计', '从提交到上线，每一步都有记录']
 
 const showDemo = computed(() => import.meta.env.DEV || import.meta.env.VITE_SHOW_DEMO === '1')
 

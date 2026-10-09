@@ -111,6 +111,7 @@ $routes = [
     'devreqs/claim' => [['POST'], 'devreqs.php', 'qly_api_devreqs_claim'],
     'devreqs/design' => [['POST'], 'devreqs.php', 'qly_api_devreqs_design'],
     'devreqs/battle-publish' => [['POST'], 'devreqs.php', 'qly_api_devreqs_battle_publish'],
+    'devreqs/sync-task' => [['POST'], 'devreqs.php', 'qly_api_devreqs_sync_task'],
     'devreqs/devs' => [['GET'], 'devreqs.php', 'qly_api_devreqs_devs'],
     'devreqs/pms' => [['GET'], 'devreqs.php', 'qly_api_devreqs_pms'],
 ];

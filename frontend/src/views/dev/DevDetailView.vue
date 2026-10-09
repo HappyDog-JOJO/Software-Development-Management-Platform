@@ -192,11 +192,16 @@ watch(reqId, load)
                 <span class="meta-row__value">{{ detail.pmName || '待认领' }}</span>
               </div>
               <div class="meta-row">
-                <span class="meta-row__label">评审</span>
-                <span class="meta-row__value">
-                  {{ detail.reviewerName ? `${detail.reviewerName} · ${fmtDateTime(detail.reviewedAt ?? '')}` : '待评审' }}
-                  <em v-if="detail.reviewComment" class="meta-row__note">{{ detail.reviewComment }}</em>
-                </span>
+                <span class="meta-row__label">评审人</span>
+                <span class="meta-row__value">{{ detail.reviewerName || '待评审' }}</span>
+              </div>
+              <div v-if="detail.reviewedAt" class="meta-row">
+                <span class="meta-row__label">评审时间</span>
+                <span class="meta-row__value">{{ fmtDateTime(detail.reviewedAt) }}</span>
+              </div>
+              <div v-if="detail.reviewComment" class="meta-row">
+                <span class="meta-row__label">评审意见</span>
+                <span class="meta-row__value">{{ detail.reviewComment }}</span>
               </div>
               <div class="meta-row">
                 <span class="meta-row__label">开发分支</span>
@@ -207,10 +212,12 @@ watch(reqId, load)
                 <span class="meta-row__value">{{ detail.devLeaderName || '—' }}</span>
               </div>
               <div class="meta-row">
-                <span class="meta-row__label">上线</span>
-                <span class="meta-row__value">
-                  {{ detail.releasedAt ? `${fmtDateTime(detail.releasedAt)}（发布：${detail.releasedBy ?? '—'}）` : '未上线' }}
-                </span>
+                <span class="meta-row__label">上线时间</span>
+                <span class="meta-row__value">{{ detail.releasedAt ? fmtDateTime(detail.releasedAt) : '未上线' }}</span>
+              </div>
+              <div v-if="detail.releasedBy" class="meta-row">
+                <span class="meta-row__label">发布人</span>
+                <span class="meta-row__value">{{ detail.releasedBy }}</span>
               </div>
             </div>
           </aside>
@@ -512,8 +519,7 @@ watch(reqId, load)
 .meta-row {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   padding: 8px 0;
   font-size: 13.5px;
 }
@@ -524,28 +530,22 @@ watch(reqId, load)
 
 .meta-row__label {
   flex: 0 0 auto;
+  width: 4.5em;
   color: var(--color-text-secondary);
 }
 
 .meta-row__value {
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--color-text-primary);
-  text-align: right;
-  word-break: break-all;
+  text-align: left;
+  word-break: break-word;
 }
 
 .meta-row__sub {
   margin-left: 6px;
   font-size: 12px;
   color: var(--color-text-placeholder);
-}
-
-.meta-row__note {
-  display: block;
-  margin-top: 4px;
-  font-style: normal;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--color-text-secondary);
 }
 
 .mono {

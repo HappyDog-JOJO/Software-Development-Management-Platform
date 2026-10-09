@@ -12,7 +12,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as XLSX from 'xlsx'
 import { useDictStore } from '@/stores/dict'
-import { battlePublishDevRequest, fetchDevCandidates, fetchDevRequests, fetchPmCandidates } from '@/api/devreq'
+import { battlePublishDevRequest, fetchDevCandidates, fetchDevRequests, fetchPmCandidates, syncTaskDevRequest } from '@/api/devreq'
 import { exportReleasedLog } from '@/api/log'
 import { DEV_PRIORITY_CLASS, DEV_PRIORITY_OPTIONS, DEV_STATUS_CLASS, DEV_STATUS_OPTIONS } from '@/constants/devreq'
 import DevRequestActions from '@/components/DevRequestActions.vue'
@@ -27,7 +27,7 @@ const props = defineProps<{ stage?: DevStatus; mine?: boolean; released?: boolea
 
 /**
  * 本列表页的存储标识（列宽记忆 / 列配置共用）。
- * 本组件被 6 个环节页复用（我的需求/评审池/需求池/设计中心/开发中心/发布上线）：
+ * 本组件被 5 个环节页复用（我的需求/评审池/需求池/设计中心/开发中心）：
  * 路由侧已给各页独立的组件实例（router-view 按 route.name 加 key），
  * 这里只需在实例创建时按当前页取一个固定标识，页与页之间互不影响。
  */
@@ -73,6 +73,7 @@ const DEV_COL_DEFS: Record<string, DevColDef> = {
   designUrl: { label: '设计文档', width: 110 },
   pmName: { label: '设计人', width: 100 },
   devLeaderName: { label: '负责人', width: 100 },
+  pingcodeTask: { label: 'PingCode', width: 110 },
   moduleName: { label: '模块', width: 80 },
   priority: { label: '优先级', width: 78, align: 'center', sortable: true },
   status: { label: '状态', width: 100, align: 'center' },
@@ -122,6 +123,10 @@ const devColumns = computed(() =>
         return false
       }
       if (c.key === 'devLeaderName' && !isBattleStage.value) {
+        return false
+      }
+      // PingCode 同步列：仅开发中心展示
+      if (c.key === 'pingcodeTask' && !isBattleStage.value) {
         return false
       }
       if (c.key === 'releasedAt' && !isReleasedStage.value) {
@@ -208,6 +213,34 @@ async function onBatchPublish(): Promise<void> {
     await load()
   } finally {
     batchBusy.value = false
+  }
+}
+
+/** 批量同步任务到 PingCode（开发中心）：勾选后一次同步；已同步的自动跳过 */
+const syncBusy = ref(false)
+/** 可同步的行：开发中心且尚未同步 */
+const syncableSelected = computed(() =>
+  selectedRows.value.filter((r) => r.status === '开发中心' && !r.pingcodeTaskId),
+)
+async function onBatchSync(): Promise<void> {
+  const ids = syncableSelected.value.map((r) => r.id)
+  if (!ids.length) {
+    ElMessage.warning('请先勾选要同步的需求（仅开发中心且未同步的）')
+    return
+  }
+  await ElMessageBox.confirm(
+    `确定将勾选的 ${ids.length} 条需求同步到 PingCode 吗？将逐条创建「任务」工作项。`,
+    '批量同步任务',
+    { confirmButtonText: '确定同步', cancelButtonText: '取消', type: 'info' },
+  )
+  syncBusy.value = true
+  try {
+    const res = await syncTaskDevRequest(ids)
+    ElMessage.success(`已同步 ${res.affected} 条到 PingCode${res.skipped > 0 ? `，${res.skipped} 条已跳过` : ''}`)
+    selectedRows.value = []
+    await load()
+  } finally {
+    syncBusy.value = false
   }
 }
 
@@ -398,6 +431,7 @@ function registerColumns(): void {
     { key: 'designUrl', label: '设计文档' },
     { key: 'pmName', label: '设计人' },
     { key: 'devLeaderName', label: '负责人' },
+    { key: 'pingcodeTask', label: 'PingCode' },
     { key: 'moduleName', label: '模块' },
     { key: 'priority', label: '优先级' },
     { key: 'status', label: '状态' },
@@ -534,6 +568,13 @@ watch(
             :width="36"
             @change="onToggleHidePending"
           />
+          <!-- 开发中心：批量同步任务到 PingCode -->
+          <el-button
+            v-if="isBattleStage"
+            :disabled="!syncableSelected.length"
+            :loading="syncBusy"
+            @click="onBatchSync"
+          >批量同步任务{{ syncableSelected.length ? `（${syncableSelected.length}）` : '' }}</el-button>
           <!-- 开发中心：批量发布上线 -->
           <el-button
             v-if="isBattleStage"
@@ -635,6 +676,27 @@ watch(
               <template v-else-if="c.key === 'devLeaderName'">
                 <span v-if="row.devLeaderName" class="cell-nowrap">{{ row.devLeaderName }}</span>
                 <span v-else class="text-placeholder">—</span>
+              </template>
+
+              <!-- 开发中心：PingCode 同步状态（已同步显示任务编号链接，未同步显示「未同步」） -->
+              <template v-else-if="c.key === 'pingcodeTask'">
+                <el-tooltip
+                  v-if="row.pingcodeTaskId"
+                  :content="row.pingcodeSyncedAt ? `同步时间：${fmtDateTime(row.pingcodeSyncedAt)}` : '已同步到 PingCode'"
+                  placement="top"
+                  effect="light"
+                  :show-after="200"
+                >
+                  <a
+                    v-if="row.pingcodeTaskUrl"
+                    class="cell-code cell-code--link cell-nowrap"
+                    :href="row.pingcodeTaskUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >{{ row.pingcodeTaskNo || '查看任务' }}</a>
+                  <span v-else class="cell-nowrap">{{ row.pingcodeTaskNo || '已同步' }}</span>
+                </el-tooltip>
+                <span v-else class="text-placeholder">未同步</span>
               </template>
 
               <template v-else-if="c.key === 'priority'">

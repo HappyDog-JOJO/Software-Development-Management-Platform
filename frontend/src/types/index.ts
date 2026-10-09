@@ -8,7 +8,6 @@ export type Role =
   | '评审委员'
   | '产品经理'
   | '开发工程师'
-  | '质量审核员'
 
 export type IssueStatus = '待处理' | '处理中' | '已处理' | '未处理' | '已驳回'
 
@@ -29,7 +28,6 @@ export type LogType =
   | '需求评审'
   | '需求设计'
   | '需求开发'
-  | '质量审核'
   | '需求发布'
 
 /* ==================== 需求管理模块 ==================== */
@@ -433,17 +431,16 @@ export interface DevRequest {
   designedAt: string | null
   devDoneNote: string | null
   devDoneAt: string | null
-  inspectorName: string | null
-  inspectResult: '通过' | '驳回' | null
-  inspectComment: string | null
-  inspectedAt: string | null
-  rejectCount: number
   releasedAt: string | null
   releasedBy: string | null
+  /** PingCode 同步状态（同步后记录） */
+  pingcodeTaskId: string | null
+  pingcodeTaskNo: string | null
+  pingcodeTaskUrl: string | null
+  pingcodeSyncedAt: string | null
   poolAt: string | null
   designAt: string | null
   battleAt: string | null
-  inspectAt: string | null
   frontlineAt: string | null
   createdAt: string
   updatedAt: string

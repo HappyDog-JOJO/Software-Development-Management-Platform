@@ -10,7 +10,6 @@ export const ROLES: Role[] = [
   '评审委员',
   '产品经理',
   '开发工程师',
-  '质量审核员',
 ]
 
 export const ROLE_ADMIN: Role = '管理员'
@@ -20,7 +19,6 @@ export const ROLE_MANAGER: Role = '销售经理'
 export const ROLE_COMMITTEE: Role = '评审委员'
 export const ROLE_PM: Role = '产品经理'
 export const ROLE_DEV: Role = '开发工程师'
-export const ROLE_INSPECTOR: Role = '质量审核员'
 
 /** 可处理售后问题的角色 */
 export const HANDLE_ROLES: Role[] = [ROLE_SERVICE, ROLE_ADMIN]

@@ -15,13 +15,12 @@ const QLY_ROLE_ADMIN = '管理员';
 const QLY_ROLE_COMMITTEE = '评审委员';
 const QLY_ROLE_PM = '产品经理';
 const QLY_ROLE_DEV = '开发工程师';
-const QLY_ROLE_INSPECTOR = '质量审核员';
 
 function qly_roles(): array
 {
     return [
         QLY_ROLE_SALES, QLY_ROLE_SERVICE, QLY_ROLE_MANAGER, QLY_ROLE_ADMIN,
-        QLY_ROLE_COMMITTEE, QLY_ROLE_PM, QLY_ROLE_DEV, QLY_ROLE_INSPECTOR,
+        QLY_ROLE_COMMITTEE, QLY_ROLE_PM, QLY_ROLE_DEV,
     ];
 }
 

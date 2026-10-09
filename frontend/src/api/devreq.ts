@@ -80,6 +80,11 @@ export function battlePublishDevRequest(ids: number[]): Promise<{ affected: numb
   return http.post<{ affected: number; skipped: number }>('/api.php?r=devreqs/battle-publish', { ids })
 }
 
+/** 同步任务到 PingCode（负责人/管理员，支持批量；已同步的自动跳过） */
+export function syncTaskDevRequest(ids: number[]): Promise<{ affected: number; skipped: number }> {
+  return http.post<{ affected: number; skipped: number }>('/api.php?r=devreqs/sync-task', { ids })
+}
+
 /** 负责人候选（开发工程师 / 管理员） */
 export function fetchDevCandidates(): Promise<DevCandidate[]> {
   return http.get<DevCandidate[]>('/api.php?r=devreqs/devs')

@@ -99,17 +99,15 @@ function qly_devreq_row_public(array $r): array
         'designedAt' => $r['designed_at'],
         'devDoneNote' => $r['dev_done_note'] ?? null,
         'devDoneAt' => $r['dev_done_at'] ?? null,
-        'inspectorName' => $r['inspector_name'],
-        'inspectResult' => $r['inspect_result'],
-        'inspectComment' => $r['inspect_comment'],
-        'inspectedAt' => $r['inspected_at'],
-        'rejectCount' => (int) $r['reject_count'],
         'releasedAt' => $r['released_at'],
         'releasedBy' => $r['released_by'],
+        'pingcodeTaskId' => $r['pingcode_task_id'] ?? null,
+        'pingcodeTaskNo' => $r['pingcode_task_no'] ?? null,
+        'pingcodeTaskUrl' => $r['pingcode_task_url'] ?? null,
+        'pingcodeSyncedAt' => $r['pingcode_synced_at'] ?? null,
         'poolAt' => $r['pool_at'],
         'designAt' => $r['design_at'],
         'battleAt' => $r['battle_at'],
-        'inspectAt' => $r['inspect_at'],
         'frontlineAt' => $r['frontline_at'],
         'createdAt' => $r['created_at'],
         'updatedAt' => $r['updated_at'],
@@ -252,7 +250,7 @@ function qly_api_devreqs_detail(): void
 
     // 时间线日志（该需求相关的全部需求流日志）
     $logs = [];
-    $types = ['提交需求', '需求评审', '需求设计', '需求开发', '质量审核', '需求发布'];
+    $types = ['提交需求', '需求评审', '需求设计', '需求开发', '需求发布'];
     $in = [];
     $params = [':t' => '%' . $row['req_no'] . '%'];
     foreach ($types as $k => $t) {
@@ -736,4 +734,112 @@ function qly_api_devreqs_pms(): void
     }
     usort($items, fn(array $a, array $b): int => strcmp($a['name'], $b['name']));
     qly_ok($items);
+}
+
+/**
+ * 同步任务到 PingCode（开发中心操作；负责人/管理员，支持批量）。
+ * 在 PingCode 创建「任务」类型工作项：标题=需求标题，描述=需求描述+元信息；
+ * 成功后记录任务 ID/编号/链接，重复同步自动跳过（已同步的需求不重复创建）。
+ */
+function qly_api_devreqs_sync_task(): void
+{
+    $user = qly_auth_user();
+    require_once __DIR__ . '/../inc/pingcode.php';
+
+    if (!qly_pingcode_configured()) {
+        qly_fail('PingCode 未配置：请在 .env 中补充 PINGCODE_CLIENT_ID / PINGCODE_CLIENT_SECRET / PINGCODE_PROJECT_ID');
+    }
+    $ids = qly_input('ids');
+    if (is_array($ids) && $ids) {
+        $targets = array_values(array_unique(array_map('intval', $ids)));
+    } else {
+        $one = qly_input_int('id', 0);
+        $targets = $one > 0 ? [$one] : [];
+    }
+    if (!$targets) {
+        qly_fail('请选择要同步的需求');
+    }
+    $isAdmin = qly_has_role($user, [QLY_ROLE_ADMIN]);
+    $projectId = qly_pingcode_env('PINGCODE_PROJECT_ID');
+    try {
+        $typeId = qly_pingcode_task_type_id($projectId);
+    } catch (Throwable $e) {
+        qly_fail('连接 PingCode 失败：' . $e->getMessage());
+    }
+    if ($typeId === '') {
+        qly_fail('未在 PingCode 项目中找到「任务」类型的工作项类型，请检查项目配置');
+    }
+    $now = date('Y-m-d H:i:s');
+    $okCount = 0;
+    $skipCount = 0;
+    $errors = [];
+    foreach ($targets as $tid) {
+        if ($tid <= 0) {
+            $skipCount++;
+            continue;
+        }
+        $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $tid]);
+        if (!$row || (string) $row['status'] !== '开发中心') {
+            $skipCount++;
+            continue;
+        }
+        if (!$isAdmin && (int) ($row['dev_leader_id'] ?? 0) !== (int) $user['id']) {
+            $skipCount++;
+            continue;
+        }
+        if ((string) ($row['pingcode_task_id'] ?? '') !== '') {
+            // 已同步过：不重复创建
+            $skipCount++;
+            continue;
+        }
+        // 描述：需求描述 + 来源信息（编号/模块/设计文档/分支），便于 PingCode 侧追溯
+        $lines = [(string) $row['description']];
+        $lines[] = '';
+        $lines[] = '—— 由软件开发管理平台同步 ——';
+        $lines[] = '需求编号：' . (string) $row['req_no'];
+        if ((string) ($row['module_name'] ?? '') !== '') {
+            $lines[] = '所属模块：' . (string) $row['module_name'];
+        }
+        if ((string) ($row['design_url'] ?? '') !== '') {
+            $lines[] = '设计文档：' . (string) $row['design_url'];
+        }
+        if ((string) ($row['branch'] ?? '') !== '') {
+            $lines[] = '开发分支：' . (string) $row['branch'];
+        }
+        if ((string) ($row['pm_name'] ?? '') !== '') {
+            $lines[] = '设计人：' . (string) $row['pm_name'];
+        }
+        if ((string) ($row['dev_leader_name'] ?? '') !== '') {
+            $lines[] = '负责人：' . (string) $row['dev_leader_name'];
+        }
+        try {
+            [$taskId, $taskNo, $taskUrl] = qly_pingcode_create_task(
+                (string) $row['title'],
+                implode("\n", $lines),
+                $projectId,
+                $typeId
+            );
+        } catch (Throwable $e) {
+            $errors[] = (string) $row['req_no'] . '：' . $e->getMessage();
+            $skipCount++;
+            continue;
+        }
+        qly_update('dev_request', $tid, [
+            'pingcode_task_id' => $taskId,
+            'pingcode_task_no' => $taskNo !== '' ? $taskNo : null,
+            'pingcode_task_url' => $taskUrl !== '' ? $taskUrl : null,
+            'pingcode_synced_at' => $now,
+            'updated_at' => $now,
+        ]);
+        qly_log($user, '需求开发', (string) $row['req_no'], '同步任务到 PingCode：' . $row['title'] . ($taskNo !== '' ? '（' . $taskNo . '）' : ''));
+        $okCount++;
+    }
+    if ($okCount === 0) {
+        if ($errors) {
+            qly_fail('同步失败：' . implode('；', array_slice($errors, 0, 3)));
+        }
+        qly_fail('没有可同步的需求（需处于开发中心、由您负责且尚未同步）');
+    }
+    $msg = '已同步 ' . $okCount . ' 条到 PingCode' . ($skipCount > 0 ? '，另有 ' . $skipCount . ' 条已跳过（状态不符/无权限/已同步）' : '');
+    qly_ok(['affected' => $okCount, 'skipped' => $skipCount], $msg);
 }

@@ -19,6 +19,7 @@ import {
   fetchDevCandidates,
   getDevRequest,
   reviewDevRequest,
+  syncTaskDevRequest,
   updateDevRequest,
   type DevAttachmentPayload,
 } from '@/api/devreq'
@@ -73,6 +74,21 @@ const showDesign = computed(
 const showBattlePublish = computed(
   () => props.req.status === '开发中心' && (admin.value || isDevLeader.value),
 )
+/** 同步任务到 PingCode：与发布上线同权限（负责人/管理员），仅开发中心且尚未同步 */
+const showSyncTask = computed(
+  () =>
+    props.req.status === '开发中心' &&
+    (admin.value || isDevLeader.value) &&
+    !props.req.pingcodeTaskId,
+)
+/** 已同步到 PingCode：展示任务编号链接（开发中心内） */
+const syncedTask = computed(() =>
+  props.req.status === '开发中心' &&
+  !!props.req.pingcodeTaskId &&
+  (admin.value || isDevLeader.value)
+    ? { no: props.req.pingcodeTaskNo || '已同步', url: props.req.pingcodeTaskUrl || '' }
+    : null,
+)
 /** 修改/删除：提交人本人（自己的）/ 管理员（全部），仅评审池阶段（评审开始后不可改删） */
 const showEdit = computed(
   () => props.req.status === '评审池' && (admin.value || isSubmitter.value),
@@ -84,6 +100,8 @@ const hasActions = computed(
     showClaim.value ||
     showDesign.value ||
     showBattlePublish.value ||
+    showSyncTask.value ||
+    syncedTask.value !== null ||
     showEdit.value,
 )
 
@@ -283,6 +301,23 @@ async function onBattlePublish(): Promise<void> {
   }
 }
 
+/* —— 同步任务到 PingCode（开发中心） —— */
+async function onSyncTask(): Promise<void> {
+  await ElMessageBox.confirm(
+    `确定将「${props.req.title}」同步到 PingCode 吗？将在 PingCode 创建一条「任务」工作项。`,
+    '同步任务',
+    { confirmButtonText: '确定同步', cancelButtonText: '取消', type: 'info' },
+  )
+  busy.value = true
+  try {
+    await syncTaskDevRequest([props.req.id])
+    ElMessage.success('已同步到 PingCode')
+    emit('refresh')
+  } finally {
+    busy.value = false
+  }
+}
+
 /* —— 提交设计（设计中心；设计文档为网址，负责人默认商辂） —— */
 const designForm = reactive({
   designUrl: '',
@@ -366,6 +401,17 @@ async function onDesignSubmit(): Promise<void> {
 
     <!-- 开发中心：发布上线（立即上线，记录上线时间） -->
     <el-button v-if="showBattlePublish" v-bind="btnPrimary" :loading="busy" @click="onBattlePublish">发布上线</el-button>
+
+    <!-- 开发中心：同步任务到 PingCode（未同步时显示按钮；已同步显示任务编号链接） -->
+    <el-button v-if="showSyncTask" v-bind="btnPrimary" :loading="busy" @click="onSyncTask">同步任务</el-button>
+    <a
+      v-else-if="syncedTask"
+      class="sync-task-link"
+      :href="syncedTask.url || undefined"
+      :target="syncedTask.url ? '_blank' : undefined"
+      rel="noopener noreferrer"
+      :title="syncedTask.url ? '打开 PingCode 任务' : '已同步到 PingCode'"
+    >{{ syncedTask.no }}</a>
 
     <!-- 修改 / 删除（评审前；提交人本人或管理员） -->
     <el-button v-if="showEdit" v-bind="btnPrimary" @click="openEdit">修改</el-button>
@@ -495,6 +541,18 @@ async function onDesignSubmit(): Promise<void> {
    间距规则与各列表页操作列一致（间距由 .cell--actions 统一控制） */
 .dev-actions--link {
   display: contents;
+}
+
+/* 已同步到 PingCode：任务编号链接（与文字按钮同色） */
+.sync-task-link {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+.sync-task-link:hover {
+  text-decoration: underline;
 }
 
 .dialog-atts {
