@@ -32,6 +32,8 @@ const stepActive = computed(() => {
   return devStageIndex(detail.value.status)
 })
 const isCancelled = computed(() => detail.value?.status === '已取消')
+/** 评审驳回（作废）：时间线停在评审池，轨道高亮转为红色语义 */
+const isRejected = computed(() => detail.value?.status === '已驳回')
 
 async function load(): Promise<void> {
   if (!reqId.value) return
@@ -92,15 +94,31 @@ watch(reqId, load)
     <MoonLoader v-if="loading" text="正在加载需求详情…" />
 
     <template v-else-if="detail">
-      <!-- 环节步骤条：五站进度 + 当前状态 -->
+      <!-- 环节进度：轻量阶段轨道（小圆点 + 细连线，当前环节高亮；替代默认 el-steps 的大图标样式） -->
       <div v-if="!isCancelled" class="moon-card steps-card">
-        <el-steps :active="stepActive" align-center finish-status="success">
-          <el-step v-for="(s, i) in DEV_STAGES" :key="s" :title="s" :description="stepActive === i && detail.status === '已驳回' ? '已作废' : ''" />
-        </el-steps>
-        <div class="steps-status">
-          <span :class="DEV_STATUS_CLASS[detail.status as keyof typeof DEV_STATUS_CLASS]">{{ detail.status }}</span>
-          <span v-if="detail.status === '已驳回'" class="reject-hint">需求未通过评审，已作废（如仍需要请重新提交新需求）</span>
+        <div class="stage-rail">
+          <template v-for="(s, i) in DEV_STAGES" :key="s">
+            <div
+              class="stage-rail__stop"
+              :class="{
+                'is-done': i < stepActive,
+                'is-current': i === stepActive && !isRejected,
+                'is-rejected': i === stepActive && isRejected,
+              }"
+            >
+              <span class="stage-rail__dot" aria-hidden="true" />
+              <span class="stage-rail__name">{{ s }}</span>
+            </div>
+            <span
+              v-if="i < DEV_STAGES.length - 1"
+              class="stage-rail__line"
+              :class="{ 'is-done': i < stepActive }"
+              aria-hidden="true"
+            />
+          </template>
+          <span v-if="isRejected" class="pill pill--red stage-rail__rejected">已驳回（作废）</span>
         </div>
+        <div v-if="isRejected" class="stage-rail__hint">需求未通过评审，如仍需要请重新提交新需求</div>
       </div>
       <el-alert v-else type="info" :closable="false" title="该需求已被提交人取消" />
 
@@ -271,22 +289,102 @@ watch(reqId, load)
 </template>
 
 <style scoped>
-/* 步骤条卡片 */
+/* 环节进度轨道：小圆点 + 细连线（与页面 pill 体系同风格）
+ * 已过的环节实心主色圆点 + 主色连线；当前环节圆点带光晕；未到环节灰色空心点 */
 .steps-card {
-  padding: 18px 18px 12px;
+  padding: 16px 24px;
 }
 
-.steps-status {
+.stage-rail {
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin-top: 8px;
+  gap: 0;
+  flex-wrap: wrap;
+  row-gap: 10px;
 }
 
-.reject-hint {
+.stage-rail__stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.stage-rail__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--color-bg-container);
+  border: 2px solid var(--color-border);
+  box-sizing: border-box;
+  transition: all var(--transition-base);
+}
+
+.stage-rail__name {
+  font-size: 13.5px;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  transition: color var(--transition-base);
+}
+
+/* 已走过的环节：实心主色 + 深色文字 */
+.stage-rail__stop.is-done .stage-rail__dot {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.stage-rail__stop.is-done .stage-rail__name {
+  color: var(--color-text-regular);
+}
+
+/* 当前环节：圆点放大带光晕 + 主色加粗文字 */
+.stage-rail__stop.is-current .stage-rail__dot {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 4px var(--color-primary-tint);
+}
+
+.stage-rail__stop.is-current .stage-rail__name {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* 评审驳回：当前环节转红色语义 */
+.stage-rail__stop.is-rejected .stage-rail__dot {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  box-shadow: 0 0 0 4px var(--color-danger-tint);
+}
+
+.stage-rail__stop.is-rejected .stage-rail__name {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+.stage-rail__rejected {
+  margin-left: 12px;
+}
+
+.stage-rail__hint {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--color-border-light);
   font-size: 12px;
-  color: var(--color-danger, #c45656);
+  color: var(--color-danger);
+}
+
+/* 连线：细线 + 圆角，未走过与已走过两种色 */
+.stage-rail__line {
+  flex: 1 1 24px;
+  min-width: 24px;
+  height: 2px;
+  margin: 0 10px;
+  border-radius: 2px;
+  background: var(--color-border-light);
+}
+
+.stage-rail__line.is-done {
+  background: var(--color-primary-soft);
 }
 
 /* 信息卡：头部标识区（与问题详情页一致） */
