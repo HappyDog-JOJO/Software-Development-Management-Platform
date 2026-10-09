@@ -403,21 +403,6 @@ a {
   margin-left: 0;
 }
 
-.moon-table .cell--actions--fixed .el-button + .el-button {
-  margin-left: 0;
-}
-
-/* 固定两列的操作列（问题列表）：保证有无主操作时「详情」仍对齐，整体居中。
- * 主操作列宽需容下最宽文案「追加处理」（4 字 × 14px）；删除按钮仅管理员可见，
- * 非管理员时三列布局会空出最后一格（不影响对齐）。 */
-.moon-table .cell--actions--fixed {
-  display: grid;
-  grid-template-columns: 58px 44px 44px;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-}
-
 /* 表格外的普通单元格保持原有对齐（仅带 .cell--actions 的操作列改为 flex） */
 .moon-table .el-table__cell .cell {
   line-height: 1.5;

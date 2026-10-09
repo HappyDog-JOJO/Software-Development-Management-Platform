@@ -602,9 +602,9 @@ watch(
             </template>
           </el-table-column>
 
-          <el-table-column label="操作" :width="colw.bind('操作', { width: 240 }).width" fixed="right" align="center">
+          <el-table-column label="操作" :width="colw.bind('操作', { width: 220 }).width" fixed="right" align="center">
             <template #default="{ row }">
-              <div class="cell--actions cell--actions--fixed">
+              <div class="cell--actions">
                 <el-button
                   link
                   type="primary"
@@ -614,7 +614,6 @@ watch(
                 >
                   {{ actionLabel(row) }}
                 </el-button>
-                <el-button link type="primary" class="btn-action-detail" @click="goDetail(row)">详情</el-button>
                 <el-button
                   v-if="auth.isAdmin"
                   link
@@ -762,13 +761,15 @@ watch(
   color: var(--color-text-regular);
 }
 
-/* 操作列按钮：统一为文字（link）按钮，主操作固定宽度保证跨行对齐 */
+/* 操作列按钮：统一为文字（link）按钮。主操作固定宽度，
+ * 保证「处理/追加处理」与「删除」跨行对齐（详情入口已改为点击问题编号）。 */
 .btn-action-main {
+  width: 58px;
   justify-content: center;
   padding: 0;
 }
 
-/* 不可用时保留占位（不可见），保证「详情」跨行对齐 */
+/* 不可用时保留占位（不可见），保证「删除」跨行对齐 */
 .btn-action-main.is-hidden {
   visibility: hidden;
 }
