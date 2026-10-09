@@ -295,6 +295,17 @@ function qly_pingcode_create_task(string $title, string $description, string $pr
         throw new RuntimeException('PingCode 创建工作项未返回工作项 ID');
     }
     $identifier = (string) ($data['identifier'] ?? $data['short_id'] ?? '');
-    $htmlUrl = (string) ($data['url'] ?? $data['html_url'] ?? '');
+    // 优先 html_url（形如 https://kgd.pingcode.com/pjm/workitems/{short_id} 的人类可访问地址）；
+    // url 字段是 API 地址（open.pingcode.com/v1/...）不可直接点开，仅在 html_url 缺失时兜底。
+    $htmlUrl = (string) ($data['html_url'] ?? '');
+    if ($htmlUrl === '' && $id !== '') {
+        // 创建响应未带 html_url 时，按 ID 查一次详情补齐
+        try {
+            $detail = qly_pingcode_api('GET', '/v1/project/work_items/' . rawurlencode($id));
+            $htmlUrl = (string) ($detail['html_url'] ?? '');
+        } catch (Throwable $e) {
+            $htmlUrl = '';
+        }
+    }
     return [$id, $identifier, $htmlUrl];
 }

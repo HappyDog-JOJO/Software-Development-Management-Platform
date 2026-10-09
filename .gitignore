@@ -24,3 +24,6 @@ test_scope_run.py
 *.log
 .DS_Store
 Thumbs.db
+
+# 运行时缓存（PingCode token 等，含敏感凭证）
+site/runtime/
