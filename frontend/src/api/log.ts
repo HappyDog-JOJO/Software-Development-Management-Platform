@@ -33,3 +33,8 @@ export function exportIssueLog(count: number): Promise<null> {
 export function exportReportLog(count: number): Promise<null> {
   return http.post<null>('/api.php?r=export/log', { kind: 'report', count }, true)
 }
+
+/** 发布上线记录导出（写操作日志） */
+export function exportReleasedLog(count: number): Promise<null> {
+  return http.post<null>('/api.php?r=export/log', { kind: 'released', count }, true)
+}

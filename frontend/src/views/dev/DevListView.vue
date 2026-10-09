@@ -10,16 +10,18 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import * as XLSX from 'xlsx'
 import { useDictStore } from '@/stores/dict'
 import { battlePublishDevRequest, fetchDevCandidates, fetchDevRequests, fetchPmCandidates } from '@/api/devreq'
+import { exportReleasedLog } from '@/api/log'
 import { DEV_PRIORITY_CLASS, DEV_PRIORITY_OPTIONS, DEV_STATUS_CLASS, DEV_STATUS_OPTIONS } from '@/constants/devreq'
 import DevRequestActions from '@/components/DevRequestActions.vue'
 import EmptyIllustration from '@/components/illustrations/EmptyIllustration.vue'
 import ColumnConfig from '@/components/ColumnConfig.vue'
-import { fmtDateTime } from '@/utils/format'
+import { fileStamp, fmtDateTime } from '@/utils/format'
 import { useColumnWidths } from '@/composables/useColumnWidths'
 import { useColumnConfig } from '@/composables/useColumnConfig'
-import type { DevCandidate, DevPriority, DevRequest, DevStatus } from '@/types'
+import type { DevCandidate, DevPriority, DevQuery, DevRequest, DevStatus } from '@/types'
 
 const props = defineProps<{ stage?: DevStatus; mine?: boolean; released?: boolean }>()
 
@@ -98,8 +100,8 @@ const isReleasedStage = computed(() => props.released === true)
 /**
  * 按「列配置」的顺序与显隐生成实际渲染的列。
  * 条件列：状态列只在「我的需求」等未按环节过滤的页面展示；
- * 设计文档/设计人/负责人三列仅在「开发中心」展示（配合筛选）；
- * 上线时间列仅在「发布上线」记录页展示。
+ * 设计文档/设计人列在「开发中心」（配合筛选）与「发布上线」记录页展示；
+ * 负责人列仅在「开发中心」展示；上线时间列仅在「发布上线」记录页展示。
  * （「处理人」列已整体移除：各环节显示的多为与状态重复的信息，
  *   设计/开发负责人由开发中心的设计人、负责人列承载，明细看详情页。）
  */
@@ -113,7 +115,13 @@ const devColumns = computed(() =>
       if (c.key === 'status' && !showStatusColumn.value) {
         return false
       }
-      if (['designUrl', 'pmName', 'devLeaderName'].includes(c.key) && !isBattleStage.value) {
+      if (c.key === 'designUrl' && !isBattleStage.value && !isReleasedStage.value) {
+        return false
+      }
+      if (c.key === 'pmName' && !isBattleStage.value && !isReleasedStage.value) {
+        return false
+      }
+      if (c.key === 'devLeaderName' && !isBattleStage.value) {
         return false
       }
       if (c.key === 'releasedAt' && !isReleasedStage.value) {
@@ -241,24 +249,31 @@ const sortField = ref<'createdAt' | 'priority' | 'releasedAt'>(
 )
 const sortOrder = ref<'ASC' | 'DESC'>('DESC')
 
+/** 列表查询参数（列表加载与导出共用，保证导出范围与当前筛选一致） */
+function buildQuery(): DevQuery {
+  return {
+    status: props.stage ?? (filters.status || undefined),
+    mine: props.mine ? '1' : undefined,
+    hidePending: showHidePending.value && hidePending.value ? '1' : undefined,
+    keyword: filters.keyword.trim() || undefined,
+    priority: filters.priority || undefined,
+    moduleId: filters.moduleId,
+    pmId: isBattleStage.value ? filters.pmId : undefined,
+    devLeaderId: isBattleStage.value ? filters.devLeaderId : undefined,
+    releasedStart: isReleasedStage.value ? filters.releasedStart || undefined : undefined,
+    releasedEnd: isReleasedStage.value ? filters.releasedEnd || undefined : undefined,
+    sortField: sortField.value,
+    sortOrder: sortOrder.value,
+  }
+}
+
 async function load(): Promise<void> {
   loading.value = true
   try {
     const res = await fetchDevRequests({
-      status: props.stage ?? (filters.status || undefined),
-      mine: props.mine ? '1' : undefined,
-      hidePending: showHidePending.value && hidePending.value ? '1' : undefined,
-      keyword: filters.keyword.trim() || undefined,
-      priority: filters.priority || undefined,
-      moduleId: filters.moduleId,
-      pmId: isBattleStage.value ? filters.pmId : undefined,
-      devLeaderId: isBattleStage.value ? filters.devLeaderId : undefined,
-      releasedStart: isReleasedStage.value ? filters.releasedStart || undefined : undefined,
-      releasedEnd: isReleasedStage.value ? filters.releasedEnd || undefined : undefined,
+      ...buildQuery(),
       page: page.value,
       pageSize: pageSize.value,
-      sortField: sortField.value,
-      sortOrder: sortOrder.value,
     })
     items.value = res.items
     total.value = res.total
@@ -267,6 +282,63 @@ async function load(): Promise<void> {
     total.value = 0
   } finally {
     loading.value = false
+  }
+}
+
+/**
+ * 导出 Excel（发布上线记录页）：按当前筛选导出全部记录（不只当前页），
+ * 导出动作写操作日志（与问题列表导出同模式）。
+ */
+const exporting = ref(false)
+async function onExport(): Promise<void> {
+  if (!items.value.length && total.value === 0) {
+    ElMessage.warning('当前筛选没有可导出的数据')
+    return
+  }
+  exporting.value = true
+  try {
+    // 循环拉取全部页（每页 200，上限保护 50 页 = 1 万条）
+    const all: DevRequest[] = []
+    let p = 1
+    for (; p <= 50; p += 1) {
+      const res = await fetchDevRequests({ ...buildQuery(), page: p, pageSize: 200 })
+      all.push(...res.items)
+      if (all.length >= res.total || res.items.length === 0) {
+        break
+      }
+    }
+    const rows = all.map((r) => ({
+      需求编号: r.reqNo,
+      需求标题: r.title,
+      设计文档: r.designUrl || '—',
+      设计人: r.pmName || '—',
+      负责人: r.devLeaderName || '—',
+      模块: r.moduleName || '—',
+      优先级: r.priority,
+      提交人: r.submitterName,
+      提交部门: r.submitterDepartmentName || '未分配部门',
+      提交时间: fmtDateTime(r.createdAt),
+      上线时间: fmtDateTime(r.releasedAt),
+      发布人: r.releasedBy || '—',
+    }))
+    if (!rows.length) {
+      ElMessage.warning('当前筛选没有可导出的数据')
+      return
+    }
+    const sheet = XLSX.utils.json_to_sheet(rows)
+    sheet['!cols'] = [
+      { wch: 20 }, { wch: 28 }, { wch: 42 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
+      { wch: 8 }, { wch: 10 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 10 },
+    ]
+    const book = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(book, sheet, '发布上线记录')
+    XLSX.writeFile(book, `发布上线记录_${fileStamp()}.xlsx`)
+    await exportReleasedLog(rows.length)
+    ElMessage.success(`导出完成（共 ${rows.length} 条），导出动作已记入操作日志`)
+  } catch {
+    ElMessage.error('导出失败，请重试')
+  } finally {
+    exporting.value = false
   }
 }
 
@@ -470,6 +542,13 @@ watch(
             :loading="batchBusy"
             @click="onBatchPublish"
           >批量发布上线{{ publishableSelected.length ? `（${publishableSelected.length}）` : '' }}</el-button>
+          <!-- 发布上线记录页：导出 Excel（按当前筛选导出全部） -->
+          <el-button
+            v-if="isReleasedStage"
+            type="default"
+            :loading="exporting"
+            @click="onExport"
+          >导出 Excel</el-button>
           <ColumnConfig :config="colcfg" title="需求列表" />
           <el-button @click="load">刷新</el-button>
         </div>
@@ -533,7 +612,7 @@ watch(
                 <span class="cell-nowrap">{{ row.moduleName || '—' }}</span>
               </template>
 
-              <!-- 开发中心专属列：设计文档链接（新窗口打开）/ 设计人 / 负责人 -->
+              <!-- 设计文档（链接，新窗口打开）/ 设计人：开发中心与发布上线记录页展示；负责人：仅开发中心 -->
               <template v-else-if="c.key === 'designUrl'">
                 <a
                   v-if="row.designUrl"
