@@ -125,6 +125,13 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'dev/release',
+        name: 'DevRelease',
+        component: () => import('@/views/dev/DevListView.vue'),
+        props: { stage: '已上线' as DevStatus, released: true },
+        meta: { title: '发布上线', roles: [ROLE_COMMITTEE, ROLE_ADMIN], icon: 'release', group: '开发管理' },
+      },
+      {
         path: 'dev/reqs/:id',
         name: 'DevReqDetail',
         component: () => import('@/views/dev/DevDetailView.vue'),
@@ -212,6 +219,7 @@ export const MENU: MenuNode[] = [
   { path: '/dev/pool', title: '需求池', icon: 'pool', group: '开发管理', roles: [ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN] },
   { path: '/dev/design', title: '设计中心', icon: 'design', group: '开发管理', roles: [ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN] },
   { path: '/dev/battle', title: '开发中心', icon: 'battle', group: '开发管理', roles: [ROLE_DEV, ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN] },
+  { path: '/dev/release', title: '发布上线', icon: 'release', group: '开发管理', roles: [ROLE_COMMITTEE, ROLE_ADMIN] },
   // 系统管理（固定在最下）
   { path: '/duty', title: '值班排班', icon: 'duty', group: '系统管理', roles: [ROLE_ADMIN] },
   { path: '/system/notices', title: '公告管理', icon: 'notice', group: '系统管理', roles: [ROLE_ADMIN] },
