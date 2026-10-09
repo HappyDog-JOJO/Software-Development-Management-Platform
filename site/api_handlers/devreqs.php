@@ -829,6 +829,16 @@ function qly_api_devreqs_sync_task(): void
             $skipCount++;
             continue;
         }
+        // 开发分支作为标签挂到工作项（不存在则自动创建标签）；失败不阻断同步，仅记录告警
+        $branch = trim((string) ($row['branch'] ?? ''));
+        if ($branch !== '') {
+            try {
+                $tagId = qly_pingcode_ensure_tag($branch, $projectId);
+                qly_pingcode_attach_tag($taskId, $tagId);
+            } catch (Throwable $e) {
+                $errors[] = (string) $row['req_no'] . '：分支标签同步失败（' . $e->getMessage() . '）';
+            }
+        }
         qly_update('dev_request', $tid, [
             'pingcode_task_id' => $taskId,
             'pingcode_task_no' => $taskNo !== '' ? $taskNo : null,
@@ -836,7 +846,7 @@ function qly_api_devreqs_sync_task(): void
             'pingcode_synced_at' => $now,
             'updated_at' => $now,
         ]);
-        qly_log($user, '需求开发', (string) $row['req_no'], '同步到 PingCode：' . $row['title'] . ($taskNo !== '' ? '（' . $taskNo . '）' : ''));
+        qly_log($user, '需求开发', (string) $row['req_no'], '同步到 PingCode：' . $row['title'] . ($taskNo !== '' ? '（' . $taskNo . '）' : '') . ($branch !== '' ? '，分支标签 ' . $branch : ''));
         $okCount++;
     }
     if ($okCount === 0) {

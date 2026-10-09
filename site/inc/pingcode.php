@@ -309,3 +309,65 @@ function qly_pingcode_create_task(string $title, string $description, string $pr
     }
     return [$id, $identifier, $htmlUrl];
 }
+
+/**
+ * 按名称查标签 id（全局标签库，按项目维度检索）；找不到返回空串。
+ * 说明：分支名通常不是已有标签，由调用方决定是否创建。
+ */
+function qly_pingcode_find_tag(string $name, string $projectId): string
+{
+    $data = qly_pingcode_api('GET', '/v1/pjm/workitem/tags', null, [
+        'project_id' => $projectId,
+        'name' => $name,
+    ]);
+    $items = $data['values'] ?? $data['value'] ?? $data;
+    if (!is_array($items)) {
+        return '';
+    }
+    foreach ($items as $it) {
+        if (!is_array($it)) {
+            continue;
+        }
+        if ((string) ($it['name'] ?? '') === $name) {
+            return (string) ($it['id'] ?? '');
+        }
+    }
+    return '';
+}
+
+/** 创建标签（同名已存在时返回已有 id）；返回标签 id，失败抛异常 */
+function qly_pingcode_ensure_tag(string $name, string $projectId): string
+{
+    $existing = qly_pingcode_find_tag($name, $projectId);
+    if ($existing !== '') {
+        return $existing;
+    }
+    $data = qly_pingcode_api('POST', '/v1/pjm/workitem_tags', ['name' => $name]);
+    $id = (string) ($data['id'] ?? '');
+    if ($id === '') {
+        // 并发场景：创建失败时再查一次
+        $again = qly_pingcode_find_tag($name, $projectId);
+        if ($again !== '') {
+            return $again;
+        }
+        throw new RuntimeException('创建标签「' . $name . '」未返回标签 ID');
+    }
+    return $id;
+}
+
+/**
+ * 给工作项挂标签（幂等：已挂则忽略）；失败抛异常由调用方决定是否降级。
+ * 用途：同步时把「开发分支」作为标签写入，便于 PingCode 侧按分支筛选。
+ */
+function qly_pingcode_attach_tag(string $workItemId, string $tagId): void
+{
+    try {
+        qly_pingcode_api('POST', '/v1/pjm/workitems/' . rawurlencode($workItemId) . '/tags', ['tag_id' => $tagId]);
+    } catch (Throwable $e) {
+        // 已挂该标签时接口可能报错：视为成功（幂等）
+        if (mb_strpos($e->getMessage(), '已存在') !== false || mb_strpos($e->getMessage(), 'exist') !== false) {
+            return;
+        }
+        throw $e;
+    }
+}
