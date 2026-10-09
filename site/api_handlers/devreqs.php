@@ -738,7 +738,7 @@ function qly_api_devreqs_pms(): void
 
 /**
  * 同步任务到 PingCode（开发中心操作；负责人/管理员，支持批量）。
- * 在 PingCode 创建「任务」类型工作项：标题=需求标题，描述=需求描述+元信息；
+ * 在 PingCode「快工单」项目创建「史诗」类型工作项：标题=需求标题，描述=需求描述+元信息；
  * 成功后记录任务 ID/编号/链接，重复同步自动跳过（已同步的需求不重复创建）。
  */
 function qly_api_devreqs_sync_task(): void
@@ -760,14 +760,19 @@ function qly_api_devreqs_sync_task(): void
         qly_fail('请选择要同步的需求');
     }
     $isAdmin = qly_has_role($user, [QLY_ROLE_ADMIN]);
-    $projectId = qly_pingcode_env('PINGCODE_PROJECT_ID');
+    // 项目引用：支持填项目 ID 或项目名称（如「快工单」），自动解析为 ID
+    $projectRef = qly_pingcode_env('PINGCODE_PROJECT_ID');
     try {
+        $projectId = qly_pingcode_resolve_project($projectRef);
+        if ($projectId === '') {
+            qly_fail('未找到 PingCode 项目「' . $projectRef . '」，请检查 PINGCODE_PROJECT_ID 配置（可填项目 ID 或项目名称）');
+        }
         $typeId = qly_pingcode_task_type_id($projectId);
     } catch (Throwable $e) {
         qly_fail('连接 PingCode 失败：' . $e->getMessage());
     }
     if ($typeId === '') {
-        qly_fail('未在 PingCode 项目中找到「任务」类型的工作项类型，请检查项目配置');
+        qly_fail('未在 PingCode 项目「' . $projectRef . '」中找到「史诗」类型，请检查项目的工作项类型配置');
     }
     $now = date('Y-m-d H:i:s');
     $okCount = 0;
@@ -831,7 +836,7 @@ function qly_api_devreqs_sync_task(): void
             'pingcode_synced_at' => $now,
             'updated_at' => $now,
         ]);
-        qly_log($user, '需求开发', (string) $row['req_no'], '同步任务到 PingCode：' . $row['title'] . ($taskNo !== '' ? '（' . $taskNo . '）' : ''));
+        qly_log($user, '需求开发', (string) $row['req_no'], '同步到 PingCode：' . $row['title'] . ($taskNo !== '' ? '（' . $taskNo . '）' : ''));
         $okCount++;
     }
     if ($okCount === 0) {

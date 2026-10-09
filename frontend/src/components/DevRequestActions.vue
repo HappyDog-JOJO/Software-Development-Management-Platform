@@ -304,7 +304,7 @@ async function onBattlePublish(): Promise<void> {
 /* —— 同步任务到 PingCode（开发中心） —— */
 async function onSyncTask(): Promise<void> {
   await ElMessageBox.confirm(
-    `确定将「${props.req.title}」同步到 PingCode 吗？将在 PingCode 创建一条「任务」工作项。`,
+    `确定将「${props.req.title}」同步到 PingCode 吗？将在快工单项目创建一条「史诗」工作项。`,
     '同步任务',
     { confirmButtonText: '确定同步', cancelButtonText: '取消', type: 'info' },
   )

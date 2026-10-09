@@ -229,7 +229,7 @@ async function onBatchSync(): Promise<void> {
     return
   }
   await ElMessageBox.confirm(
-    `确定将勾选的 ${ids.length} 条需求同步到 PingCode 吗？将逐条创建「任务」工作项。`,
+    `确定将勾选的 ${ids.length} 条需求同步到 PingCode 吗？将在快工单项目逐条创建「史诗」工作项。`,
     '批量同步任务',
     { confirmButtonText: '确定同步', cancelButtonText: '取消', type: 'info' },
   )

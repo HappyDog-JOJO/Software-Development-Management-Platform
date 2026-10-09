@@ -199,7 +199,7 @@ function qly_pingcode_api(string $method, string $path, ?array $body = null, arr
     return is_array($data) ? $data : [];
 }
 
-/** 解析出「任务」类型 id（type 名含「任务」；查不到时返回空串由上层报错） */
+/** 解析出「史诗」类型 id（需求同步固定创建「史诗」工作项；查不到时返回空串由上层报错） */
 function qly_pingcode_task_type_id(string $projectId): string
 {
     $data = qly_pingcode_api('GET', '/v1/project/work_item/types', null, ['project_id' => $projectId]);
@@ -207,7 +207,7 @@ function qly_pingcode_task_type_id(string $projectId): string
     if (!is_array($items)) {
         return '';
     }
-    // 优先精确名「任务」，其次包含「任务」
+    // 优先精确名「史诗」，其次包含「史诗」
     $fallback = '';
     foreach ($items as $it) {
         if (!is_array($it)) {
@@ -218,10 +218,10 @@ function qly_pingcode_task_type_id(string $projectId): string
         if ($id === '') {
             continue;
         }
-        if ($name === '任务') {
+        if ($name === '史诗') {
             return $id;
         }
-        if ($fallback === '' && mb_strpos($name, '任务') !== false) {
+        if ($fallback === '' && mb_strpos($name, '史诗') !== false) {
             $fallback = $id;
         }
     }
@@ -229,7 +229,53 @@ function qly_pingcode_task_type_id(string $projectId): string
 }
 
 /**
- * 在 PingCode 创建任务；返回 [id, identifier(如 KG-123，可空), htmlUrl(可空)]
+ * 解析项目 ID：PINGCODE_PROJECT_ID 可填「项目 ID」或「项目名称」（如 快工单）。
+ * 先按 ID 直查（命中返回原值），再拉项目列表按名称精确匹配；都找不到返回空串。
+ */
+function qly_pingcode_resolve_project(string $projectRef): string
+{
+    if ($projectRef === '') {
+        return '';
+    }
+    // 1) 先尝试按 ID 直查（ID 通常为字母数字短标识，中文名不会命中）
+    try {
+        $proj = qly_pingcode_api('GET', '/v1/project/projects/' . rawurlencode($projectRef));
+        $id = (string) ($proj['id'] ?? $proj['_id'] ?? '');
+        if ($id !== '') {
+            return $id;
+        }
+    } catch (Throwable $e) {
+        // 直查失败继续走名称匹配
+    }
+    // 2) 拉项目列表按名称匹配（先精确，后包含）
+    $data = qly_pingcode_api('GET', '/v1/project/projects');
+    $items = $data['values'] ?? $data['value'] ?? $data;
+    if (!is_array($items)) {
+        return '';
+    }
+    $fallback = '';
+    foreach ($items as $it) {
+        if (!is_array($it)) {
+            continue;
+        }
+        $id = (string) ($it['id'] ?? $it['_id'] ?? '');
+        if ($id === '') {
+            continue;
+        }
+        $name = (string) ($it['name'] ?? $it['display_name'] ?? '');
+        $identifier = (string) ($it['identifier'] ?? $it['key'] ?? '');
+        if ($name === $projectRef || $identifier === $projectRef) {
+            return $id;
+        }
+        if ($fallback === '' && ($name !== '' && mb_strpos($name, $projectRef) !== false)) {
+            $fallback = $id;
+        }
+    }
+    return $fallback;
+}
+
+/**
+ * 在 PingCode 创建工作项（史诗）；返回 [id, identifier(如 KG-123，可空), htmlUrl(可空)]
  * 说明：html_url 字段在 Open API 响应中可能为 url/html_url；取到什么用什么，前端兜底拼接。
  */
 function qly_pingcode_create_task(string $title, string $description, string $projectId, string $typeId, string $priorityId = ''): array
@@ -246,7 +292,7 @@ function qly_pingcode_create_task(string $title, string $description, string $pr
     $data = qly_pingcode_api('POST', '/v1/project/work_items', $body);
     $id = (string) ($data['id'] ?? $data['_id'] ?? '');
     if ($id === '') {
-        throw new RuntimeException('PingCode 创建任务未返回任务 ID');
+        throw new RuntimeException('PingCode 创建工作项未返回工作项 ID');
     }
     $identifier = (string) ($data['identifier'] ?? $data['short_id'] ?? '');
     $htmlUrl = (string) ($data['url'] ?? $data['html_url'] ?? '');
