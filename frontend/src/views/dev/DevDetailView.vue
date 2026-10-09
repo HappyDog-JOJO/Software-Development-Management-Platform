@@ -1,27 +1,31 @@
 <script setup lang="ts">
 /**
- * 需求详情页：六站步骤条 + 全量信息 + 附件 + 时间线。
- * 操作按钮由 DevRequestActions 按角色与状态动态渲染；
- * 开发中心内由负责人直接发布上线（操作区按钮）。
+ * 需求详情页：环节步骤条 + 需求信息卡 + 流转时间线（样式与布局对齐问题详情页）。
+ * - 顶部工具栏：返回列表 + 操作区（DevRequestActions 按角色与状态动态渲染）
+ * - 信息卡：头部标识区（编号/标签/时间戳）+ 左（元信息列表）+ 右（描述/设计文档/附件）
+ * - 时间线：提交、评审、设计、开发与发布的全部记录（最新在上）
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { getDevRequest } from '@/api/devreq'
 import { DEV_PRIORITY_CLASS, DEV_STAGES, DEV_STATUS_CLASS, devStageIndex } from '@/constants/devreq'
 import { logTypeClass } from '@/constants/issue'
 import DevRequestActions from '@/components/DevRequestActions.vue'
+import RoleTag from '@/components/RoleTag.vue'
+import MoonLoader from '@/components/illustrations/MoonLoader.vue'
 import { fmtDateTime, fmtSize, isImage } from '@/utils/format'
 import { openAttachment } from '@/utils/attachment'
 import type { DevAttachment, DevRequestDetail } from '@/types'
 
 const route = useRoute()
+const router = useRouter()
 
 const loading = ref(false)
 const detail = ref<DevRequestDetail | null>(null)
 
 const reqId = computed(() => Number(route.params.id) || 0)
 
-/** 步骤条进度：正常状态按六站序号；已驳回停在评审池；已取消不展示步骤条 */
+/** 步骤条进度：正常状态按五站序号；已驳回停在评审池；已取消不展示步骤条 */
 const stepActive = computed(() => {
   if (!detail.value) return 0
   if (detail.value.status === '已驳回') return 0
@@ -78,9 +82,17 @@ watch(reqId, load)
 </script>
 
 <template>
-  <div class="page" v-loading="loading">
-    <template v-if="detail">
-      <!-- 步骤条 -->
+  <div class="page">
+    <!-- 顶部工具栏：返回列表 + 操作区（与问题详情页一致） -->
+    <div class="page__actions page__actions--toolbar">
+      <el-button @click="router.back()">返回列表</el-button>
+      <DevRequestActions v-if="detail" :req="detail" @refresh="load" />
+    </div>
+
+    <MoonLoader v-if="loading" text="正在加载需求详情…" />
+
+    <template v-else-if="detail">
+      <!-- 环节步骤条：五站进度 + 当前状态 -->
       <div v-if="!isCancelled" class="moon-card steps-card">
         <el-steps :active="stepActive" align-center finish-status="success">
           <el-step v-for="(s, i) in DEV_STAGES" :key="s" :title="s" :description="stepActive === i && detail.status === '已驳回' ? '已作废' : ''" />
@@ -90,129 +102,166 @@ watch(reqId, load)
           <span v-if="detail.status === '已驳回'" class="reject-hint">需求未通过评审，已作废（如仍需要请重新提交新需求）</span>
         </div>
       </div>
-      <el-alert v-else type="info" :closable="false" title="该需求已被提交人取消" style="margin-bottom: 14px" />
+      <el-alert v-else type="info" :closable="false" title="该需求已被提交人取消" />
 
-      <!-- 基本信息 -->
-      <div class="moon-card info-card">
-        <div class="info-head">
-          <div class="info-title">
-            <h2>{{ detail.title }}</h2>
-            <span class="mono">{{ detail.reqNo }}</span>
-          </div>
-          <div class="info-actions">
-            <DevRequestActions :req="detail" @refresh="load" />
-          </div>
-        </div>
-
-        <div class="desc-block">{{ detail.description }}</div>
-
-        <div class="meta-grid">
-          <div class="meta-item">
-            <span class="meta-label">状态</span>
-            <span :class="DEV_STATUS_CLASS[detail.status as keyof typeof DEV_STATUS_CLASS]">{{ detail.status }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">优先级</span>
-            <span :class="DEV_PRIORITY_CLASS[detail.priority as keyof typeof DEV_PRIORITY_CLASS]">{{ detail.priority }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">所属模块</span>
-            <span>{{ detail.moduleName || '—' }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">提交人</span>
-            <span>{{ detail.submitterName }}（{{ detail.submitterDepartmentName || '未分配部门' }}）</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">提交时间</span>
-            <span>{{ fmtDateTime(detail.createdAt) }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">评审</span>
-            <span>
-              {{ detail.reviewerName ? `${detail.reviewerName} · ${fmtDateTime(detail.reviewedAt ?? '')}` : '待评审' }}
-              <em v-if="detail.reviewComment" class="meta-note">{{ detail.reviewComment }}</em>
-            </span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">产品经理</span>
-            <span>{{ detail.pmName || '待认领' }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">开发分支</span>
-            <span class="mono">{{ detail.branch || '—' }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">负责人</span>
-            <span>{{ detail.devLeaderName || '—' }}</span>
-          </div>
-          <div class="meta-item">
-            <span class="meta-label">上线</span>
-            <span>
-              {{ detail.releasedAt ? `${fmtDateTime(detail.releasedAt)}（发布：${detail.releasedBy ?? '—'}）` : '未上线' }}
-            </span>
-          </div>
-        </div>
-
-        <div v-if="detail.designUrl" class="design-doc">
-          <div class="design-doc__title">设计文档（{{ detail.pmName || '—' }}）</div>
-          <div class="design-doc__body">
-            <a
-              class="cell-code cell-code--link"
-              :href="detail.designUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-            >{{ detail.designUrl }}</a>
-          </div>
-        </div>
-
-        <div v-if="detail.designDoc" class="design-doc">
-          <div class="design-doc__title">设计说明（{{ detail.pmName }}）</div>
-          <div class="design-doc__body">{{ detail.designDoc }}</div>
-        </div>
-      </div>
-
-      <!-- 附件 -->
-      <div v-if="groupedAtts.length" class="moon-card atts-card">
-        <h3 class="card-title">附件</h3>
-        <div v-for="g in groupedAtts" :key="g.scene" class="att-group">
-          <div class="att-group__title">{{ g.title }}</div>
-          <div class="att-list">
-            <a
-              v-for="a in g.items"
-              :key="a.id"
-              class="att-file"
-              :href="a.url"
-              :class="{ 'is-image': isImage(a.mimeType, a.name) }"
-              :title="isImage(a.mimeType, a.name) ? '点击查看图片' : '点击下载文件'"
-              @click.prevent="onAttachmentClick(a, g.items)"
-            >
-              <span class="att-file__icon" aria-hidden="true">{{ isImage(a.mimeType, a.name) ? 'IMG' : 'FILE' }}</span>
-              <span class="att-file__name">{{ a.name }}</span>
-              <span class="att-file__size">{{ fmtSize(a.size) }}</span>
-              <span class="att-file__act">{{ isImage(a.mimeType, a.name) ? '查看' : '下载' }}</span>
-            </a>
-          </div>
-        </div>
-      </div>
-
-
-      <!-- 时间线 -->
-      <div class="moon-card logs-card">
-        <h3 class="card-title">流转时间线</h3>
-        <ul v-if="detail.logs.length" class="logs">
-          <li v-for="l in detail.logs" :key="l.id" class="log-item">
-            <span class="log-item__dot" aria-hidden="true" />
-            <div class="log-item__main">
-              <div class="log-item__head">
-                <span :class="logTypeClass(l.type)">{{ l.type }}</span>
-                <span class="log-item__who">{{ l.account }}（{{ l.role }}）</span>
-                <span class="log-item__time">{{ fmtDateTime(l.createdAt) }}</span>
-              </div>
-              <div class="log-item__body">{{ l.content }}</div>
+      <!-- 需求信息卡：头部标识区 + 左（元信息）+ 右（描述/设计文档/附件） -->
+      <div class="moon-card moon-card--moonlit issue-card">
+        <div class="issue-head">
+          <div class="issue-head__main">
+            <div class="issue-head__titleline">
+              <span class="issue-head__title">{{ detail.title }}</span>
+              <span class="issue-head__no">{{ detail.reqNo }}</span>
             </div>
-          </li>
-        </ul>
+            <div class="issue-head__tags">
+              <span :class="DEV_STATUS_CLASS[detail.status as keyof typeof DEV_STATUS_CLASS]">{{ detail.status }}</span>
+              <span :class="DEV_PRIORITY_CLASS[detail.priority as keyof typeof DEV_PRIORITY_CLASS]">{{ detail.priority }}</span>
+              <span v-if="detail.moduleName" class="pill pill--primary">{{ detail.moduleName }}</span>
+              <span v-else class="pill pill--grey">未分类</span>
+              <el-tooltip
+                v-if="detail.reviewPending"
+                :content="`待定备注：${detail.reviewComment || ''}`"
+                placement="top"
+                effect="light"
+                :show-after="200"
+              >
+                <span class="pill pill--yellow">待定</span>
+              </el-tooltip>
+            </div>
+          </div>
+          <div class="issue-head__aside">
+            <div class="issue-head__stamp">
+              <span class="issue-head__stamp-label">提交时间</span>
+              <span class="issue-head__stamp-value">{{ fmtDateTime(detail.createdAt) }}</span>
+            </div>
+            <div class="issue-head__stamp">
+              <span class="issue-head__stamp-label">最近更新</span>
+              <span class="issue-head__stamp-value">{{ detail.updatedAt ? fmtDateTime(detail.updatedAt) : '—' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="issue-body">
+          <aside class="issue-body__side">
+            <div class="meta-list">
+              <div class="meta-row">
+                <span class="meta-row__label">提交人</span>
+                <span class="meta-row__value">{{ detail.submitterName }}<span v-if="detail.submitterAccount && detail.submitterAccount !== detail.submitterName" class="meta-row__sub">{{ detail.submitterAccount }}</span></span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-row__label">提交部门</span>
+                <span class="meta-row__value">{{ detail.submitterDepartmentName || '未分配部门' }}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-row__label">所属模块</span>
+                <span class="meta-row__value">{{ detail.moduleName || '—' }}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-row__label">产品经理</span>
+                <span class="meta-row__value">{{ detail.pmName || '待认领' }}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-row__label">评审</span>
+                <span class="meta-row__value">
+                  {{ detail.reviewerName ? `${detail.reviewerName} · ${fmtDateTime(detail.reviewedAt ?? '')}` : '待评审' }}
+                  <em v-if="detail.reviewComment" class="meta-row__note">{{ detail.reviewComment }}</em>
+                </span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-row__label">开发分支</span>
+                <span class="meta-row__value mono">{{ detail.branch || '—' }}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-row__label">负责人</span>
+                <span class="meta-row__value">{{ detail.devLeaderName || '—' }}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-row__label">上线</span>
+                <span class="meta-row__value">
+                  {{ detail.releasedAt ? `${fmtDateTime(detail.releasedAt)}（发布：${detail.releasedBy ?? '—'}）` : '未上线' }}
+                </span>
+              </div>
+            </div>
+          </aside>
+
+          <div class="issue-body__main">
+            <div class="info-desc">
+              <div class="info-desc__label">需求描述</div>
+              <div class="info-desc__body">{{ detail.description }}</div>
+            </div>
+
+            <!-- 设计文档（网址，新窗口打开） -->
+            <div v-if="detail.designUrl" class="info-attachments">
+              <div class="info-attachments__label">设计文档（{{ detail.pmName || '—' }}）</div>
+              <div class="attachment-list">
+                <a
+                  class="attachment-chip"
+                  :href="detail.designUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  :title="`打开设计文档：${detail.designUrl}`"
+                >
+                  <span class="attachment-chip__icon" aria-hidden="true">URL</span>
+                  <span class="attachment-chip__name cell-ellipsis">{{ detail.designUrl }}</span>
+                  <span class="attachment-chip__act">打开</span>
+                </a>
+              </div>
+            </div>
+
+            <!-- 设计说明 -->
+            <div v-if="detail.designDoc" class="info-desc info-desc--spaced">
+              <div class="info-desc__label">设计说明（{{ detail.pmName || '—' }}）</div>
+              <div class="info-desc__body">{{ detail.designDoc }}</div>
+            </div>
+
+            <!-- 附件（按场景分组，chip 样式与问题详情一致） -->
+            <div v-for="g in groupedAtts" :key="g.scene" class="info-attachments">
+              <div class="info-attachments__label">{{ g.title }}（{{ g.items.length }} 个）</div>
+              <div class="attachment-list">
+                <a
+                  v-for="a in g.items"
+                  :key="a.id"
+                  class="attachment-chip"
+                  :href="a.url"
+                  :class="{ 'is-image': isImage(a.mimeType, a.name) }"
+                  :title="isImage(a.mimeType, a.name) ? '点击查看图片' : '点击下载文件'"
+                  @click.prevent="onAttachmentClick(a, g.items)"
+                >
+                  <span class="attachment-chip__icon" aria-hidden="true">{{ isImage(a.mimeType, a.name) ? 'IMG' : 'FILE' }}</span>
+                  <span class="attachment-chip__name cell-ellipsis">{{ a.name }}</span>
+                  <span class="attachment-chip__size">{{ fmtSize(a.size) }}</span>
+                  <span class="attachment-chip__act">{{ isImage(a.mimeType, a.name) ? '查看' : '下载' }}</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 流转时间线（最新在上，样式与问题详情的处理记录一致） -->
+      <div class="moon-card">
+        <div class="section-title">
+          流转时间线
+          <span class="section-title__hint">提交、评审、设计、开发与发布的全部记录，最新在上</span>
+        </div>
+
+        <el-timeline v-if="detail.logs.length" class="record-timeline">
+          <el-timeline-item
+            v-for="(l, idx) in detail.logs"
+            :key="l.id"
+            :timestamp="fmtDateTime(l.createdAt)"
+            placement="top"
+            :hollow="idx !== 0"
+          >
+            <div class="record" :class="{ 'is-latest': idx === 0 }">
+              <div class="record__head">
+                <span :class="logTypeClass(l.type)">{{ l.type }}</span>
+                <span class="num-strong">{{ l.account }}</span>
+                <RoleTag :role="l.role" />
+              </div>
+              <div class="record__body">{{ l.content }}</div>
+            </div>
+          </el-timeline-item>
+        </el-timeline>
         <div v-else class="subs-empty">暂无流转记录</div>
       </div>
     </template>
@@ -222,9 +271,9 @@ watch(reqId, load)
 </template>
 
 <style scoped>
+/* 步骤条卡片 */
 .steps-card {
   padding: 18px 18px 12px;
-  margin-bottom: 14px;
 }
 
 .steps-status {
@@ -232,7 +281,7 @@ watch(reqId, load)
   align-items: center;
   justify-content: center;
   gap: 10px;
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
 .reject-hint {
@@ -240,166 +289,286 @@ watch(reqId, load)
   color: var(--color-danger, #c45656);
 }
 
-.info-card {
-  margin-bottom: 14px;
+/* 信息卡：头部标识区（与问题详情页一致） */
+.issue-card {
+  padding: 0;
+  overflow: hidden;
 }
 
-.info-head {
+.issue-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 16px;
+  padding: 20px 24px;
+  background: linear-gradient(135deg, var(--color-moonlight) 0%, var(--color-bg-container) 78%);
+  border-bottom: 1px solid var(--color-border-divider);
 }
 
-.info-title {
+.issue-head__main {
+  min-width: 0;
+}
+
+.issue-head__titleline {
   display: flex;
   align-items: baseline;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-.info-title h2 {
-  margin: 0;
-  font-size: 17px;
-  color: var(--color-text-primary);
-}
-
-.mono {
-  font-family: var(--font-mono, monospace);
-  font-size: 12px;
-  color: var(--color-text-secondary);
-}
-
-.desc-block {
-  margin-top: 10px;
-  padding: 12px 14px;
-  border-radius: var(--radius-control);
-  background: var(--color-bg-sub);
-  font-size: 13.5px;
-  line-height: 1.7;
-  color: var(--color-text-regular);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.meta-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 8px 24px;
-  margin-top: 14px;
-}
-
-.meta-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 13px;
   min-width: 0;
 }
 
-.meta-label {
+.issue-head__title {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-text-primary);
+  word-break: break-word;
+}
+
+.issue-head__no {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.issue-head__tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.issue-head__aside {
+  display: flex;
+  gap: 24px;
+  flex: 0 0 auto;
+}
+
+.issue-head__stamp {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: right;
+}
+
+.issue-head__stamp-label {
+  font-size: 12px;
+  color: var(--color-text-placeholder);
+}
+
+.issue-head__stamp-value {
+  font-size: 13px;
+  color: var(--color-text-regular);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 信息卡：主体两栏 */
+.issue-body {
+  display: flex;
+  align-items: stretch;
+  gap: 24px;
+  padding: 20px 24px;
+}
+
+.issue-body__main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.issue-body__side {
+  flex: 0 0 264px;
+  border-right: 1px solid var(--color-border-divider);
+  padding-right: 24px;
+}
+
+.meta-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.meta-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 13.5px;
+}
+
+.meta-row + .meta-row {
+  border-top: 1px dashed var(--color-border-light);
+}
+
+.meta-row__label {
   flex: 0 0 auto;
   color: var(--color-text-secondary);
 }
 
-.meta-label::after {
-  content: '：';
+.meta-row__value {
+  color: var(--color-text-primary);
+  text-align: right;
+  word-break: break-all;
 }
 
-.meta-note {
+.meta-row__sub {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--color-text-placeholder);
+}
+
+.meta-row__note {
   display: block;
+  margin-top: 4px;
   font-style: normal;
   font-size: 12px;
+  line-height: 1.6;
   color: var(--color-text-secondary);
 }
 
-.design-doc {
-  margin-top: 14px;
-  padding: 12px 14px;
-  border-radius: var(--radius-control);
-  border: 1px dashed var(--color-border-divider);
-}
-
-.design-doc__title {
+.mono {
+  font-family: var(--font-mono, monospace);
   font-size: 12.5px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
 }
 
-.design-doc__body {
-  margin-top: 6px;
+/* 窄屏：侧栏折到下方，去掉分隔线 */
+@media (max-width: 1180px) {
+  .issue-body {
+    flex-direction: column;
+  }
+
+  .issue-body__side {
+    flex: 1 1 auto;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border-divider);
+    padding-right: 0;
+    padding-bottom: 16px;
+  }
+}
+
+/* 描述 / 设计说明块 */
+.info-desc__label {
   font-size: 13px;
-  line-height: 1.7;
-  color: var(--color-text-regular);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.card-title {
-  margin: 0 0 10px;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-}
-
-.atts-card,
-.logs-card {
-  margin-bottom: 14px;
-}
-
-.att-group {
-  margin-bottom: 10px;
-}
-
-.att-group__title {
-  font-size: 12.5px;
   color: var(--color-text-secondary);
   margin-bottom: 6px;
 }
 
-.att-list {
+.info-desc--spaced {
+  margin-top: 16px;
+}
+
+.info-desc__body {
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  background: var(--color-bg-sub);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 设计文档 / 附件分组 */
+.info-attachments {
+  margin-top: 16px;
+}
+
+.info-attachments__label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 8px;
+}
+
+.attachment-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-top: 8px;
 }
 
-.att-file {
+.attachment-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
-  border-radius: var(--radius-control);
-  background: var(--color-bg-sub);
+  max-width: 300px;
+  padding: 5px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-container);
   color: var(--color-text-regular);
-  text-decoration: none;
-  font-size: 12.5px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition-base);
 }
 
-.att-file:hover {
+.attachment-chip:hover {
+  border-color: var(--color-primary-soft);
   background: var(--color-primary-tint);
   color: var(--color-primary);
 }
 
-.att-file__icon {
-  font-size: 10px;
+.attachment-chip__icon {
+  font-size: 9px;
   font-weight: 700;
-  text-transform: uppercase;
   color: var(--color-primary);
+  flex: 0 0 auto;
 }
 
-.att-file__size {
-  font-size: 11px;
+.attachment-chip__name {
+  max-width: 180px;
+}
+
+.attachment-chip__size {
   color: var(--color-text-placeholder);
+  flex: 0 0 auto;
 }
 
-.att-file.is-image .att-file__icon {
-  color: #2c7d5e;
-}
-
-.att-file__act {
-  font-size: 11px;
+.attachment-chip__act {
+  flex: 0 0 auto;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  background: var(--color-primary-tint);
   color: var(--color-primary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.attachment-chip.is-image .attachment-chip__act {
+  background: var(--color-accent-tint);
+  color: #c4638b;
+}
+
+/* 时间线记录块（与问题详情的处理记录一致） */
+.record {
+  padding: 12px 14px;
+  border-radius: var(--radius-control);
+  background: var(--color-bg-sub);
+  border: 1px solid transparent;
+}
+
+.record.is-latest {
+  background: var(--color-primary-tint);
+  border-color: rgba(124, 140, 228, 0.24);
+}
+
+.record__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.record__body {
+  margin-top: 8px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--color-text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .subs-empty {
@@ -407,68 +576,5 @@ watch(reqId, load)
   text-align: center;
   font-size: 12.5px;
   color: var(--color-text-secondary);
-}
-
-.logs {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.log-item {
-  position: relative;
-  display: flex;
-  gap: 10px;
-  padding: 0 0 16px 18px;
-}
-
-.log-item::before {
-  content: '';
-  position: absolute;
-  left: 5px;
-  top: 14px;
-  bottom: 0;
-  width: 1px;
-  background: var(--color-border-divider);
-}
-
-.log-item:last-child::before {
-  display: none;
-}
-
-.log-item__dot {
-  position: absolute;
-  left: 2px;
-  top: 6px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--color-primary);
-}
-
-.log-item__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.log-item__who {
-  font-size: 12.5px;
-  color: var(--color-text-regular);
-}
-
-.log-item__time {
-  font-size: 11.5px;
-  color: var(--color-text-placeholder);
-  font-variant-numeric: tabular-nums;
-}
-
-.log-item__body {
-  margin-top: 4px;
-  font-size: 12.8px;
-  line-height: 1.6;
-  color: var(--color-text-regular);
-  word-break: break-word;
 }
 </style>
