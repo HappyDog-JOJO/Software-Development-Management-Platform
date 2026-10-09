@@ -12,11 +12,9 @@ import { useAuthStore } from '@/stores/auth'
 import { useDictStore } from '@/stores/dict'
 import { DEV_PRIORITY_OPTIONS } from '@/constants/devreq'
 import AttachmentUpload from '@/components/AttachmentUpload.vue'
-import DutySignboard from '@/components/DutySignboard.vue'
 import NoticeSignboard from '@/components/NoticeSignboard.vue'
 import { fetchLatestNotice } from '@/api/notice'
-import { fetchDutyToday } from '@/api/duty'
-import type { Attachment, DutyToday, Notice } from '@/types'
+import type { Attachment, Notice } from '@/types'
 
 const auth = useAuthStore()
 const dict = useDictStore()
@@ -24,7 +22,6 @@ const router = useRouter()
 
 const formRef = ref<FormInstance>()
 const submitting = ref(false)
-const dutyToday = ref<DutyToday | null>(null)
 const latestNotice = ref<Notice | null>(null)
 
 const form = reactive({
@@ -111,7 +108,6 @@ function onCancel(): void {
 
 onMounted(() => {
   void dict.load()
-  void loadDuty()
   void loadNotice()
 })
 
@@ -121,14 +117,6 @@ async function loadNotice(): Promise<void> {
     latestNotice.value = res.notice
   } catch {
     latestNotice.value = null
-  }
-}
-
-async function loadDuty(): Promise<void> {
-  try {
-    dutyToday.value = await fetchDutyToday()
-  } catch {
-    dutyToday.value = null
   }
 }
 </script>
@@ -199,9 +187,8 @@ async function loadDuty(): Promise<void> {
         </el-form>
       </div>
 
-      <!-- 右侧：今日值班灯牌 + 公告灯牌 -->
+      <!-- 右侧：公告灯牌（需求提交页不放今日值班牌） -->
       <div class="create-side">
-        <DutySignboard :duty="dutyToday" />
         <NoticeSignboard :notice="latestNotice" />
       </div>
     </div>
