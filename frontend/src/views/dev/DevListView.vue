@@ -585,25 +585,27 @@ watch(
           >
             <template #default="{ row }">
               <template v-if="c.key === 'reqNo'">
-                <el-tooltip content="点击查看详情" placement="top" effect="light" :show-after="200">
-                  <a class="cell-code cell-code--link cell-nowrap" @click="goDetail(row)">{{ row.reqNo }}</a>
-                </el-tooltip>
+                <span class="reqno-cell">
+                  <el-tooltip content="点击查看详情" placement="top" effect="light" :show-after="200">
+                    <a class="cell-code cell-code--link cell-nowrap" @click="goDetail(row)">{{ row.reqNo }}</a>
+                  </el-tooltip>
+                  <!-- 评审待定标记：紧随需求编号展示（tag 样式，悬停看备注） -->
+                  <el-tooltip
+                    v-if="row.reviewPending"
+                    :content="`待定备注：${row.reviewComment || ''}`"
+                    placement="top"
+                    effect="light"
+                    :show-after="200"
+                  >
+                    <el-tag type="warning" effect="light" size="small" class="pending-tag">待定</el-tag>
+                  </el-tooltip>
+                </span>
               </template>
 
               <template v-else-if="c.key === 'title'">
                 <span class="title-cell">
                   <el-tooltip :content="row.title" placement="top" effect="light" :show-after="200">
                     <span class="cell-ellipsis">{{ row.title }}</span>
-                  </el-tooltip>
-                  <!-- 评审池的待定标记在此展示（悬停看备注；处理人列已整体移除） -->
-                  <el-tooltip
-                    v-if="props.stage === '评审池' && row.reviewPending"
-                    :content="`待定备注：${row.reviewComment || ''}`"
-                    placement="top"
-                    effect="light"
-                    :show-after="200"
-                  >
-                    <span class="owner-pending">待定</span>
                   </el-tooltip>
                 </span>
               </template>
@@ -640,18 +642,7 @@ watch(
               </template>
 
               <template v-else-if="c.key === 'status'">
-                <span class="status-cell">
-                  <span :class="DEV_STATUS_CLASS[row.status as keyof typeof DEV_STATUS_CLASS]">{{ row.status }}</span>
-                  <el-tooltip
-                    v-if="row.reviewPending"
-                    :content="`待定备注：${row.reviewComment || ''}`"
-                    placement="top"
-                    effect="light"
-                    :show-after="200"
-                  >
-                    <span class="owner-pending">待定</span>
-                  </el-tooltip>
-                </span>
+                <span :class="DEV_STATUS_CLASS[row.status as keyof typeof DEV_STATUS_CLASS]">{{ row.status }}</span>
               </template>
 
               <template v-else-if="c.key === 'submitterName'">
@@ -783,27 +774,24 @@ watch(
   white-space: nowrap;
 }
 
-/* 评审待定标记：黄色调（与状态胶囊 pill--yellow 同色系），tooltip 展示待定备注 */
-.owner-pending {
-  color: #9c6a17;
-  font-weight: 500;
-  cursor: help;
-}
-
 /* 空值占位（与各列表页一致） */
 .text-placeholder {
   color: var(--color-text-placeholder);
 }
 
-/* 状态列：状态胶囊 + 可选的待定标记并排 */
-.status-cell {
+/* 需求编号单元格：编号 + 待定 tag 并排（待定备注在 tag 的 tooltip 中展示） */
+.reqno-cell {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   white-space: nowrap;
 }
 
-/* 标题单元格：标题（超出省略，悬停看全文）+ 可选的待定标记 */
+.reqno-cell .pending-tag {
+  cursor: help;
+}
+
+/* 标题单元格：标题（超出省略，悬停看全文） */
 .title-cell {
   display: flex;
   align-items: center;
