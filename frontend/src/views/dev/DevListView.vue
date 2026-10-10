@@ -102,7 +102,8 @@ const isReleasedStage = computed(() => props.released === true)
  * 按「列配置」的顺序与显隐生成实际渲染的列。
  * 条件列：状态列只在「我的需求」等未按环节过滤的页面展示；
  * 设计文档/设计人列在「开发中心」（配合筛选）与「发布上线」记录页展示；
- * 负责人列仅在「开发中心」展示；上线时间列仅在「发布上线」记录页展示。
+ * 负责人列仅在「开发中心」展示；PingCode 列在「开发中心」与「发布上线」展示；
+ * 上线时间列仅在「发布上线」记录页展示。
  * （「处理人」列已整体移除：各环节显示的多为与状态重复的信息，
  *   设计/开发负责人由开发中心的设计人、负责人列承载，明细看详情页。）
  */
@@ -125,8 +126,8 @@ const devColumns = computed(() =>
       if (c.key === 'devLeaderName' && !isBattleStage.value) {
         return false
       }
-      // PingCode 同步列：仅开发中心展示
-      if (c.key === 'pingcodeTask' && !isBattleStage.value) {
+      // PingCode 同步列：开发中心 + 发布上线记录页展示
+      if (c.key === 'pingcodeTask' && !isBattleStage.value && !isReleasedStage.value) {
         return false
       }
       if (c.key === 'releasedAt' && !isReleasedStage.value) {
@@ -678,7 +679,7 @@ watch(
                 <span v-else class="text-placeholder">—</span>
               </template>
 
-              <!-- 开发中心：PingCode 同步状态（已同步显示任务编号链接，未同步显示「未同步」） -->
+              <!-- PingCode 同步状态（开发中心/发布上线展示：已同步显示工作项编号链接，未同步显示「未同步」） -->
               <template v-else-if="c.key === 'pingcodeTask'">
                 <el-tooltip
                   v-if="row.pingcodeTaskId"
