@@ -108,6 +108,7 @@ $routes = [
     'devreqs/update' => [['POST'], 'devreqs.php', 'qly_api_devreqs_update'],
     'devreqs/delete' => [['POST'], 'devreqs.php', 'qly_api_devreqs_delete'],
     'devreqs/review' => [['POST'], 'devreqs.php', 'qly_api_devreqs_review'],
+    'devreqs/priority' => [['POST'], 'devreqs.php', 'qly_api_devreqs_priority'],
     'devreqs/claim' => [['POST'], 'devreqs.php', 'qly_api_devreqs_claim'],
     'devreqs/design' => [['POST'], 'devreqs.php', 'qly_api_devreqs_design'],
     'devreqs/battle-publish' => [['POST'], 'devreqs.php', 'qly_api_devreqs_battle_publish'],

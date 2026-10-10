@@ -12,9 +12,11 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import * as XLSX from 'xlsx'
 import { useDictStore } from '@/stores/dict'
-import { battlePublishDevRequest, fetchDevCandidates, fetchDevRequests, fetchPmCandidates, syncTaskDevRequest } from '@/api/devreq'
+import { useAuthStore } from '@/stores/auth'
+import { battlePublishDevRequest, fetchDevCandidates, fetchDevRequests, fetchPmCandidates, setDevRequestPriority, syncTaskDevRequest } from '@/api/devreq'
 import { exportReleasedLog } from '@/api/log'
 import { DEV_PRIORITY_CLASS, DEV_PRIORITY_OPTIONS, DEV_STATUS_CLASS, DEV_STATUS_OPTIONS } from '@/constants/devreq'
+import { canDesignReq, canReviewReq, isAdmin } from '@/constants/user'
 import DevRequestActions from '@/components/DevRequestActions.vue'
 import EmptyIllustration from '@/components/illustrations/EmptyIllustration.vue'
 import ColumnConfig from '@/components/ColumnConfig.vue'
@@ -24,6 +26,8 @@ import { useColumnConfig } from '@/composables/useColumnConfig'
 import type { DevCandidate, DevPriority, DevQuery, DevRequest, DevStatus } from '@/types'
 
 const props = defineProps<{ stage?: DevStatus; mine?: boolean; released?: boolean }>()
+
+const auth = useAuthStore()
 
 /**
  * 本列表页的存储标识（列宽记忆 / 列配置共用）。
@@ -424,6 +428,32 @@ function goDetail(row: DevRequest): void {
   void router.push(`/dev/reqs/${row.id}`)
 }
 
+/* —— 优先级行内调整（评审委员 / 产品经理 / 管理员；任意环节可调） —— */
+/** 是否可调整优先级：与后端 devreqs/priority 接口权限保持一致 */
+const canEditPriority = computed(
+  () => canReviewReq(auth.roles) || canDesignReq(auth.roles) || isAdmin(auth.roles),
+)
+const prioritySavingId = ref(0)
+
+/** 优先级修改命令（下拉选中）；失败时提示并保持原值（load 重新拉取兜底） */
+async function onPriorityChange(row: DevRequest, priority: string): Promise<void> {
+  if (priority === row.priority) {
+    return
+  }
+  prioritySavingId.value = row.id
+  try {
+    await setDevRequestPriority(row.id, priority)
+    // 本地更新，避免整表刷新导致滚动位置丢失
+    row.priority = priority as DevPriority
+    ElMessage.success(`「${row.title}」优先级已调整为「${priority}」`)
+  } catch {
+    // 请求层已统一提示；重新拉取保证与服务端一致
+    await load()
+  } finally {
+    prioritySavingId.value = 0
+  }
+}
+
 /** 登记可配置列（顺序即默认顺序；fixed 列不参与配置）。页面切换（键变化）时需重新登记 */
 function registerColumns(): void {
   colcfg.register([
@@ -701,7 +731,31 @@ watch(
               </template>
 
               <template v-else-if="c.key === 'priority'">
-                <span :class="DEV_PRIORITY_CLASS[row.priority as keyof typeof DEV_PRIORITY_CLASS]">{{ row.priority }}</span>
+                <!-- 可调整角色（评审委员/产品经理/管理员）：点击优先级下拉直接修改；其余角色只读展示 -->
+                <el-dropdown
+                  v-if="canEditPriority"
+                  trigger="click"
+                  :disabled="prioritySavingId === row.id"
+                  @command="(v: string) => onPriorityChange(row, v)"
+                >
+                  <span class="priority-edit">
+                    <span :class="DEV_PRIORITY_CLASS[row.priority as keyof typeof DEV_PRIORITY_CLASS]">{{ row.priority }}</span>
+                    <el-icon class="priority-edit__caret"><ArrowDown /></el-icon>
+                  </span>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item
+                        v-for="p in DEV_PRIORITY_OPTIONS"
+                        :key="p"
+                        :command="p"
+                        :class="{ 'is-active-priority': p === row.priority }"
+                      >
+                        <span :class="DEV_PRIORITY_CLASS[p]">{{ p }}</span>
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+                <span v-else :class="DEV_PRIORITY_CLASS[row.priority as keyof typeof DEV_PRIORITY_CLASS]">{{ row.priority }}</span>
               </template>
 
               <template v-else-if="c.key === 'status'">
@@ -865,5 +919,28 @@ watch(
 .title-cell .cell-ellipsis {
   flex: 1;
   min-width: 0;
+}
+
+/* 优先级列：可调整角色点击胶囊下拉修改（与问题列表状态下拉同写法） */
+.priority-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  outline: none;
+}
+
+.priority-edit__caret {
+  font-size: 12px;
+  color: var(--color-text-placeholder);
+}
+
+.priority-edit:hover .priority-edit__caret {
+  color: var(--color-primary);
+}
+
+/* 下拉项内直接展示胶囊，当前优先级高亮 */
+.is-active-priority {
+  background: var(--color-primary-tint);
 }
 </style>

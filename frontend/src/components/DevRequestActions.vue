@@ -24,7 +24,6 @@ import {
   type DevAttachmentPayload,
 } from '@/api/devreq'
 import { canDesignReq, canReviewReq, isAdmin } from '@/constants/user'
-import { DEV_PRIORITY_OPTIONS } from '@/constants/devreq'
 import AttachmentUpload from '@/components/AttachmentUpload.vue'
 import type { Attachment, DevCandidate, DevRequest } from '@/types'
 
@@ -157,10 +156,10 @@ const toPayload = (list: Attachment[]): DevAttachmentPayload[] =>
   list.map((a) => ({ url: a.url, name: a.name, size: a.size, mimeType: a.mimeType }))
 
 /* —— 修改需求（评审前；表单与需求提交页一致，附件回填原提交附件） —— */
+/** 说明：不包含优先级（提交后由评审委员/产品经理在列表调整，修改保存不覆盖） */
 const editForm = reactive({
   title: '',
   moduleId: undefined as number | undefined,
-  priority: '中',
   description: '',
   attachments: [] as Attachment[],
 })
@@ -172,7 +171,6 @@ const editAttsLoaded = ref(true)
 function openEdit(): void {
   editForm.title = props.req.title
   editForm.moduleId = props.req.moduleId ?? undefined
-  editForm.priority = props.req.priority
   editForm.description = props.req.description
   editForm.attachments = []
   editModuleFallback.value = props.req.moduleName || ''
@@ -216,7 +214,7 @@ async function onEditSubmit(): Promise<void> {
       title: editForm.title.trim(),
       description: editForm.description.trim(),
       moduleId: editForm.moduleId,
-      priority: editForm.priority,
+      // 编辑表单不含优先级：不传该字段，后端保留列表内已调整的值
       // 回填失败时不传 attachments，后端保持原附件不动
       attachments: editAttsLoaded.value ? toPayload(editForm.attachments) : undefined,
     })
@@ -429,11 +427,6 @@ async function onDesignSubmit(): Promise<void> {
               />
             </el-select>
             <div v-if="editModuleFallback && !editForm.moduleId" class="form-tip">原模块「{{ editModuleFallback }}」已不可选，请重新选择</div>
-          </el-form-item>
-          <el-form-item label="优先级" required>
-            <el-select v-model="editForm.priority" style="width: 100%">
-              <el-option v-for="p in DEV_PRIORITY_OPTIONS" :key="p" :label="p" :value="p" />
-            </el-select>
           </el-form-item>
           <el-form-item label="需求描述" required>
             <el-input

@@ -10,7 +10,6 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import { createDevRequest, type DevAttachmentPayload } from '@/api/devreq'
 import { useAuthStore } from '@/stores/auth'
 import { useDictStore } from '@/stores/dict'
-import { DEV_PRIORITY_OPTIONS } from '@/constants/devreq'
 import AttachmentUpload from '@/components/AttachmentUpload.vue'
 import NoticeSignboard from '@/components/NoticeSignboard.vue'
 import { fetchLatestNotice } from '@/api/notice'
@@ -27,7 +26,6 @@ const latestNotice = ref<Notice | null>(null)
 const form = reactive({
   title: '',
   moduleId: undefined as number | undefined,
-  priority: '中' as string,
   description: '',
   attachments: [] as Attachment[],
 })
@@ -50,7 +48,6 @@ const rules: FormRules = {
     },
   ],
   moduleId: [{ required: true, message: '请选择所属模块', trigger: 'change' }],
-  priority: [{ required: true, message: '请选择优先级', trigger: 'change' }],
   description: [
     { required: true, message: '请填写需求描述', trigger: 'blur' },
     {
@@ -92,7 +89,6 @@ async function onSubmit(): Promise<void> {
       title: form.title.trim(),
       description: form.description.trim(),
       moduleId: form.moduleId,
-      priority: form.priority,
       attachments: atts,
     })
     ElMessage.success('需求已提交，进入评审池等待评审')
@@ -154,12 +150,6 @@ async function loadNotice(): Promise<void> {
             <el-select v-model="form.moduleId" placeholder="请选择所属模块" style="width: 320px">
               <el-option v-for="it in dict.enabledOf('module')" :key="it.id" :label="it.name" :value="it.id" />
             </el-select>
-          </el-form-item>
-
-          <el-form-item label="优先级" prop="priority">
-            <el-radio-group v-model="form.priority">
-              <el-radio-button v-for="p in DEV_PRIORITY_OPTIONS" :key="p" :value="p">{{ p }}</el-radio-button>
-            </el-radio-group>
           </el-form-item>
 
           <el-form-item label="需求描述" prop="description">

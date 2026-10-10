@@ -275,14 +275,15 @@ function qly_api_devreqs_detail(): void
     qly_ok($data);
 }
 
-/** 提交需求：所有登录用户 → 进入评审池 */
+/** 提交需求：所有登录用户 → 进入评审池（优先级提交时不选，统一默认「中」，后续由评审委员/产品经理在列表调整） */
 function qly_api_devreqs_create(): void
 {
     $user = qly_auth_user();
     $title = (string) qly_input('title', '');
     $description = (string) qly_input('description', '');
     $moduleId = qly_input_int('moduleId', 0);
-    $priority = (string) qly_input('priority', '中');
+    // 提交阶段不选优先级：固定默认「中」（传入值忽略，防止旧前端或接口直调绕过）
+    $priority = '中';
     $attachments = qly_input('attachments', []);
 
     if (mb_strlen(trim($title)) < 4) {
@@ -375,22 +376,28 @@ function qly_api_devreqs_update(): void
     if ((int) $module['status'] !== 1) {
         qly_fail('该模块已停用，请选择其他模块');
     }
-    if (!in_array($priority, qly_devreq_priorities(), true)) {
-        $priority = '中';
+    // 优先级：修改表单已不含该字段；仅当显式传入合法值时才更新，否则保留列表内已调整的值
+    $hasPriority = array_key_exists('priority', (array) qly_body());
+    $priority = $hasPriority ? (string) qly_input('priority', '') : '';
+    if ($hasPriority && !in_array($priority, qly_devreq_priorities(), true)) {
+        qly_fail('无效的优先级');
     }
     if (is_array($attachments) && count($attachments) > 9) {
         qly_fail('附件最多 9 个');
     }
 
     $now = date('Y-m-d H:i:s');
-    qly_update('dev_request', $id, [
+    $update = [
         'title' => $title,
         'description' => $description,
         'module_id' => $moduleId,
         'module_name' => (string) $module['name'],
-        'priority' => $priority,
         'updated_at' => $now,
-    ]);
+    ];
+    if ($hasPriority) {
+        $update['priority'] = $priority;
+    }
+    qly_update('dev_request', $id, $update);
     // 提交附件整体替换：仅在请求携带 attachments 数组时执行（回填失败时前端不传，保持原附件不动）
     if (is_array($attachments)) {
         qly_exec('DELETE FROM `dev_request_attachment` WHERE request_id = :rid AND scene = :sc', [':rid' => $id, ':sc' => 'submit']);
@@ -536,6 +543,40 @@ function qly_api_devreqs_review(): void
     }
 
     qly_fail('无效的评审操作');
+}
+
+/**
+ * 修改需求优先级（评审委员 / 产品经理 / 管理员；各列表行内直接调整）。
+ * 说明：提交需求时不选优先级（默认「中」），优先级由上述角色按实际情况调整；
+ * 任意环节均可调整（含已上线，用于事后修正登记），操作写入流转日志。
+ */
+function qly_api_devreqs_priority(): void
+{
+    $user = qly_auth_user();
+    $roles = qly_parse_roles(isset($user['roles']) ? (string) $user['roles'] : null);
+    $allowed = [QLY_ROLE_ADMIN, QLY_ROLE_COMMITTEE, QLY_ROLE_PM];
+    if (count(array_intersect($roles, $allowed)) === 0) {
+        qly_forbidden('仅评审委员、产品经理或管理员可调整优先级');
+    }
+    $id = qly_input_int('id', 0);
+    $priority = (string) qly_input('priority', '');
+    if (!in_array($priority, qly_devreq_priorities(), true)) {
+        qly_fail('无效的优先级');
+    }
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
+    if (!$row) {
+        qly_fail('需求不存在');
+    }
+    if ((string) $row['priority'] === $priority) {
+        qly_ok(['priority' => $priority], '优先级未变化');
+    }
+    $now = date('Y-m-d H:i:s');
+    qly_update('dev_request', $id, [
+        'priority' => $priority,
+        'updated_at' => $now,
+    ]);
+    qly_log($user, '需求评审', (string) $row['req_no'], '调整优先级：' . $row['title'] . '（' . (string) $row['priority'] . ' → ' . $priority . '）');
+    qly_ok(['priority' => $priority], '优先级已调整');
 }
 
 /** 产品经理认领：需求池 → 设计中心 */

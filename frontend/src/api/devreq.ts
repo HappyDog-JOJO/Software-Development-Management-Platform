@@ -30,7 +30,8 @@ export interface CreateDevRequestPayload {
   title: string
   description: string
   moduleId: number
-  priority: string
+  /** 提交时不再选择；修改接口显式传入才会更新（列表内调整由 priority 接口负责） */
+  priority?: string
   attachments?: DevAttachmentPayload[]
 }
 
@@ -43,12 +44,16 @@ export function updateDevRequest(id: number, payload: CreateDevRequestPayload): 
   return http.post<null>('/api.php?r=devreqs/update', { id, ...payload })
 }
 
+/** 调整优先级（评审委员/产品经理/管理员；各列表行内直接修改，任意环节可调） */
+export function setDevRequestPriority(id: number, priority: string): Promise<{ priority: string }> {
+  return http.post<{ priority: string }>('/api.php?r=devreqs/priority', { id, priority })
+}
+
 /** 删除需求（提交人本人删自己的/管理员删全部；仅评审池阶段） */
 export function deleteDevRequest(id: number): Promise<null> {
   return http.post<null>('/api.php?r=devreqs/delete', { id })
 }
 
-/** 评审（评审委员）：action = 通过 | 驳回（驳回 = 作废终态） */
 /** 评审（评审委员）：action = 通过（备注选填）| 待定（备注必填，暂留评审池）| 驳回（备注必填，作废终态） */
 export function reviewDevRequest(
   id: number,
