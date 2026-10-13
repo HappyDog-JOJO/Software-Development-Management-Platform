@@ -72,9 +72,45 @@ export function battlePublishDevRequest(ids: number[]): Promise<{ affected: numb
   return http.post<{ affected: number; skipped: number }>('/api.php?r=devreqs/battle-publish', { ids })
 }
 
-/** 同步任务到 PingCode（开发工程师/管理员，支持批量；已同步的自动跳过） */
-export function syncTaskDevRequest(ids: number[]): Promise<{ affected: number; skipped: number }> {
-  return http.post<{ affected: number; skipped: number }>('/api.php?r=devreqs/sync-task', { ids })
+/** PingCode 同步弹窗需要的选项（优先级 / 状态 / 项目成员） */
+export interface PingcodeOption {
+  id: string
+  name: string
+  type?: string
+  account?: string
+}
+
+export interface PingcodeOptions {
+  projectName: string
+  typeName: string
+  priorities: PingcodeOption[]
+  states: PingcodeOption[]
+  members: PingcodeOption[]
+}
+
+/** 同步任务到 PingCode 的弹窗字段（可选；标题/描述缺省用需求内容） */
+export interface PingcodeSyncFields {
+  title?: string
+  description?: string
+  priorityId?: string
+  assigneeId?: string
+  stateId?: string
+  startAt?: string
+  dueAt?: string
+  tags?: string[]
+}
+
+/** 拉取 PingCode 同步弹窗的选项 */
+export function fetchPingcodeOptions(): Promise<PingcodeOptions> {
+  return http.get<PingcodeOptions>('/api.php?r=devreqs/pingcode-options')
+}
+
+/** 同步任务到 PingCode（开发工程师/管理员，支持批量；已同步的自动跳过）；可带弹窗字段 */
+export function syncTaskDevRequest(
+  ids: number[],
+  fields?: PingcodeSyncFields,
+): Promise<{ affected: number; skipped: number }> {
+  return http.post<{ affected: number; skipped: number }>('/api.php?r=devreqs/sync-task', { ids, fields })
 }
 
 export type { Attachment, UploadResult }

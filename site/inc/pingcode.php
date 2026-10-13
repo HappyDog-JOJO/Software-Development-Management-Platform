@@ -88,11 +88,11 @@ function qly_pingcode_save_token(string $token, int $expiresIn): void
 function qly_pingcode_ca_file(): string
 {
     $ini = (string) ini_get('curl.cainfo');
-    if ($ini !== '' && is_file($ini)) {
+    if ($ini !== '' && @is_file($ini)) {
         return $ini;
     }
     $ini = (string) ini_get('openssl.cafile');
-    if ($ini !== '' && is_file($ini)) {
+    if ($ini !== '' && @is_file($ini)) {
         return $ini;
     }
     $candidates = [
@@ -104,7 +104,8 @@ function qly_pingcode_ca_file(): string
         '/etc/ssl/cert.pem',
     ];
     foreach ($candidates as $p) {
-        if (is_file($p)) {
+        // 用 @ 抑制 open_basedir 受限等警告（否则 HTML 警告会污染 JSON 响应）
+        if (@is_file($p)) {
             return $p;
         }
     }
@@ -275,10 +276,62 @@ function qly_pingcode_resolve_project(string $projectRef): string
 }
 
 /**
- * 在 PingCode 创建工作项（史诗）；返回 [id, identifier(如 KG-123，可空), htmlUrl(可空)]
- * 说明：html_url 字段在 Open API 响应中可能为 url/html_url；取到什么用什么，前端兜底拼接。
+ * PingCode 选项清单（创建「史诗」弹窗用）：优先级 / 状态 / 项目成员。
+ * 一次拉取三组数据，供前端下拉；失败抛异常由调用方处理。
  */
-function qly_pingcode_create_task(string $title, string $description, string $projectId, string $typeId, string $priorityId = ''): array
+function qly_pingcode_task_options(string $projectId, string $typeId): array
+{
+    $priorities = [];
+    $p = qly_pingcode_api('GET', '/v1/project/work_item/priorities', null, ['project_id' => $projectId]);
+    foreach (($p['values'] ?? []) as $it) {
+        if (!is_array($it)) {
+            continue;
+        }
+        $id = (string) ($it['id'] ?? '');
+        if ($id !== '') {
+            $priorities[] = ['id' => $id, 'name' => (string) ($it['name'] ?? '')];
+        }
+    }
+    $states = [];
+    $s = qly_pingcode_api('GET', '/v1/project/work_item/states', null, [
+        'project_id' => $projectId,
+        'workitem_type_id' => $typeId,
+    ]);
+    foreach (($s['values'] ?? []) as $it) {
+        if (!is_array($it)) {
+            continue;
+        }
+        $id = (string) ($it['id'] ?? '');
+        if ($id !== '') {
+            $states[] = ['id' => $id, 'name' => (string) ($it['name'] ?? ''), 'type' => (string) ($it['type'] ?? '')];
+        }
+    }
+    $members = [];
+    $m = qly_pingcode_api('GET', '/v1/project/projects/' . rawurlencode($projectId) . '/members', null, []);
+    foreach (($m['values'] ?? []) as $it) {
+        $u = $it['user'] ?? null;
+        if (!is_array($u)) {
+            continue;
+        }
+        $id = (string) ($u['id'] ?? '');
+        if ($id !== '') {
+            $members[] = [
+                'id' => $id,
+                'name' => (string) ($u['display_name'] ?? $u['name'] ?? ''),
+                'account' => (string) ($u['name'] ?? ''),
+            ];
+        }
+    }
+    return ['priorities' => $priorities, 'states' => $states, 'members' => $members];
+}
+
+/**
+ * 在 PingCode 创建工作项（史诗）；返回 [id, identifier(如 KBC-123，可空), htmlUrl(可空)]
+ * $extra 支持透传更多字段：description/priority_id/assignee_id/state_id/start_at/end_at。
+ * 说明：start_at/end_at 需传 Unix 时间戳（秒，数字）；html_url 字段在 Open API 响应中可能为 url/html_url；
+ *       取到什么用什么，前端兜底拼接。
+ */
+function qly_pingcode_create_task(string $title, string $description, string $projectId, string $typeId, string $priorityId = '', array $extra = []): array
 {
     $body = [
         'title' => $title,
@@ -288,6 +341,16 @@ function qly_pingcode_create_task(string $title, string $description, string $pr
     ];
     if ($priorityId !== '') {
         $body['priority_id'] = $priorityId;
+    }
+    foreach (['assignee_id', 'state_id'] as $k) {
+        if (isset($extra[$k]) && $extra[$k] !== '') {
+            $body[$k] = (string) $extra[$k];
+        }
+    }
+    foreach (['start_at', 'end_at'] as $k) {
+        if (isset($extra[$k]) && (int) $extra[$k] > 0) {
+            $body[$k] = (int) $extra[$k];
+        }
     }
     $data = qly_pingcode_api('POST', '/v1/project/work_items', $body);
     $id = (string) ($data['id'] ?? $data['_id'] ?? '');

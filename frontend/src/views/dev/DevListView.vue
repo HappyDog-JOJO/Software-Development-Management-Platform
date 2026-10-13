@@ -13,11 +13,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import * as XLSX from 'xlsx'
 import { useDictStore } from '@/stores/dict'
 import { useAuthStore } from '@/stores/auth'
-import { battlePublishDevRequest, developDevRequest, fetchDevRequests, setDevRequestPriority, syncTaskDevRequest } from '@/api/devreq'
+import { battlePublishDevRequest, developDevRequest, fetchDevRequests, setDevRequestPriority } from '@/api/devreq'
 import { exportReleasedLog } from '@/api/log'
 import { DEV_PRIORITY_CLASS, DEV_PRIORITY_OPTIONS, DEV_STATUS_CLASS, DEV_STATUS_OPTIONS } from '@/constants/devreq'
 import { canDevReq, canReviewReq, isAdmin, ROLE_PM } from '@/constants/user'
 import DevRequestActions from '@/components/DevRequestActions.vue'
+import PingcodeSyncDialog from '@/components/PingcodeSyncDialog.vue'
 import EmptyIllustration from '@/components/illustrations/EmptyIllustration.vue'
 import ColumnConfig from '@/components/ColumnConfig.vue'
 import { fileStamp, fmtDateTime } from '@/utils/format'
@@ -255,32 +256,26 @@ async function onBatchPublish(): Promise<void> {
   }
 }
 
-/** 批量同步任务到 PingCode（开发中心）：勾选后一次同步；已同步的自动跳过 */
+/** 批量同步任务到 PingCode（开发中心）：弹窗填写关键字段后一次同步；已同步的自动跳过 */
 const syncBusy = ref(false)
+const syncDialogVisible = ref(false)
 /** 可同步的行：开发中心且尚未同步 */
 const syncableSelected = computed(() =>
   selectedRows.value.filter((r) => r.status === '开发中心' && !r.pingcodeTaskId),
 )
-async function onBatchSync(): Promise<void> {
+function onBatchSync(): void {
   const ids = syncableSelected.value.map((r) => r.id)
   if (!ids.length) {
     ElMessage.warning('请先勾选要同步的需求（仅开发中心且未同步的）')
     return
   }
-  await ElMessageBox.confirm(
-    `确定将勾选的 ${ids.length} 条需求同步到 PingCode 吗？将在快工单项目逐条创建「史诗」工作项。`,
-    '批量同步任务',
-    { confirmButtonText: '确定同步', cancelButtonText: '取消', type: 'info' },
-  )
-  syncBusy.value = true
-  try {
-    const res = await syncTaskDevRequest(ids)
-    ElMessage.success(`已同步 ${res.affected} 条到 PingCode${res.skipped > 0 ? `，${res.skipped} 条已跳过` : ''}`)
-    selectedRows.value = []
-    await load()
-  } finally {
-    syncBusy.value = false
-  }
+  if (syncBusy.value) return
+  syncDialogVisible.value = true
+}
+
+function onSyncDone(): void {
+  selectedRows.value = []
+  void load()
 }
 
 /** 筛选区折叠（记忆用户选择，与问题列表一致） */
@@ -624,7 +619,7 @@ watch(
             :loading="batchDevelopBusy"
             @click="onBatchDevelop"
           >批量开发{{ developableSelected.length ? `（${developableSelected.length}）` : '' }}</el-button>
-          <!-- 开发中心：批量同步任务到 PingCode -->
+          <!-- 开发中心：批量同步任务到 PingCode（弹窗填写关键字段） -->
           <el-button
             v-if="isBattleStage"
             :disabled="!syncableSelected.length"
@@ -823,6 +818,12 @@ watch(
         />
       </div>
     </div>
+
+    <PingcodeSyncDialog
+      v-model="syncDialogVisible"
+      :ids="syncableSelected.map((r) => r.id)"
+      @done="onSyncDone"
+    />
   </div>
 </template>
 

@@ -641,9 +641,51 @@ function qly_api_devreqs_battle_publish(): void
 }
 
 /**
+ * PingCode 同步表单选项（开发中心「同步任务」弹窗用；开发工程师/管理员）。
+ * 返回：优先级 / 状态 / 项目成员 三组下拉数据；另附未配置时的明确提示。
+ */
+function qly_api_devreqs_pingcode_options(): void
+{
+    $user = qly_auth_user();
+    if (!qly_has_role($user, [QLY_ROLE_DEV, QLY_ROLE_ADMIN])) {
+        qly_forbidden('仅开发工程师或管理员可查看同步选项');
+    }
+    require_once __DIR__ . '/../inc/pingcode.php';
+    if (!qly_pingcode_configured()) {
+        qly_fail('PingCode 未配置：请在 .env 中补充 PINGCODE_CLIENT_ID / PINGCODE_CLIENT_SECRET / PINGCODE_PROJECT_ID');
+    }
+    $projectRef = qly_pingcode_env('PINGCODE_PROJECT_ID');
+    try {
+        $projectId = qly_pingcode_resolve_project($projectRef);
+        if ($projectId === '') {
+            qly_fail('未找到 PingCode 项目「' . $projectRef . '」，请检查 PINGCODE_PROJECT_ID 配置');
+        }
+        $typeId = qly_pingcode_task_type_id($projectId);
+        if ($typeId === '') {
+            qly_fail('未在 PingCode 项目「' . $projectRef . '」中找到「史诗」类型');
+        }
+        $opts = qly_pingcode_task_options($projectId, $typeId);
+    } catch (Throwable $e) {
+        qly_fail('连接 PingCode 失败：' . $e->getMessage());
+    }
+    qly_ok([
+        'projectName' => $projectRef,
+        'typeName' => '史诗',
+        'priorities' => $opts['priorities'],
+        'states' => $opts['states'],
+        'members' => $opts['members'],
+    ]);
+}
+
+/**
  * 同步任务到 PingCode（开发中心操作；开发工程师/管理员，支持批量）。
- * 在 PingCode「快工单」项目创建「史诗」类型工作项：标题=需求标题，描述=需求描述+元信息；
+ * 在 PingCode「快工单」项目创建「史诗」类型工作项。支持弹窗传入的关键字段：
+ * - 单条：fields.title / fields.description（可改），其余同批量
+ * - 批量/单条公共：fields.priorityId / assigneeId / stateId / startAt / dueAt / tags[]
+ * 标题缺省取值需求标题；描述缺省用「需求描述 + 来源信息（编号/模块）」。
  * 成功后记录任务 ID/编号/链接，重复同步自动跳过（已同步的需求不重复创建）。
+ * 字段契约（实测 2026-10-13）：priority_id/assignee_id/state_id 直传；start_at/end_at 传 Unix 秒时间戳；
+ *   标签需先 ensure_tag 再 attach_tag。
  */
 function qly_api_devreqs_sync_task(): void
 {
@@ -666,6 +708,26 @@ function qly_api_devreqs_sync_task(): void
     if (!$targets) {
         qly_fail('请选择要同步的需求');
     }
+    // 弹窗字段（可选）
+    $fields = qly_input('fields', []);
+    if (!is_array($fields)) {
+        $fields = [];
+    }
+    $fTitle = trim((string) ($fields['title'] ?? ''));
+    $fDesc = (string) ($fields['description'] ?? '');
+    $fPriorityId = trim((string) ($fields['priorityId'] ?? ''));
+    $fAssigneeId = trim((string) ($fields['assigneeId'] ?? ''));
+    $fStateId = trim((string) ($fields['stateId'] ?? ''));
+    $fStart = trim((string) ($fields['startAt'] ?? ''));
+    $fDue = trim((string) ($fields['dueAt'] ?? ''));
+    $fTags = is_array($fields['tags'] ?? null) ? array_values(array_filter(array_map(static function ($t) {
+        return trim((string) $t);
+    }, $fields['tags']), static function ($t) {
+        return $t !== '';
+    })) : [];
+    $startTs = $fStart !== '' ? (int) strtotime($fStart . ' 00:00:00') : 0;
+    $dueTs = $fDue !== '' ? (int) strtotime($fDue . ' 23:59:59') : 0;
+
     // 项目引用：支持填项目 ID 或项目名称（如「快工单」），自动解析为 ID
     $projectRef = qly_pingcode_env('PINGCODE_PROJECT_ID');
     try {
@@ -680,6 +742,7 @@ function qly_api_devreqs_sync_task(): void
     if ($typeId === '') {
         qly_fail('未在 PingCode 项目「' . $projectRef . '」中找到「史诗」类型，请检查项目的工作项类型配置');
     }
+    $single = count($targets) === 1;
     $now = date('Y-m-d H:i:s');
     $okCount = 0;
     $skipCount = 0;
@@ -699,21 +762,40 @@ function qly_api_devreqs_sync_task(): void
             $skipCount++;
             continue;
         }
-        // 描述：需求描述 + 来源信息（编号/模块），便于 PingCode 侧追溯
-        $lines = [(string) $row['description']];
-        $lines[] = '';
-        $lines[] = '—— 由软件开发管理平台同步 ——';
-        $lines[] = '需求编号：' . (string) $row['req_no'];
-        if ((string) ($row['module_name'] ?? '') !== '') {
-            $lines[] = '所属模块：' . (string) $row['module_name'];
+        // 标题：单条且弹窗填写时用弹窗值，否则用需求标题
+        $title = ($single && $fTitle !== '') ? $fTitle : (string) $row['title'];
+        // 描述：单条且弹窗填写时用弹窗值，否则用「需求描述 + 来源信息」
+        if ($single && $fDesc !== '') {
+            $desc = $fDesc;
+        } else {
+            $lines = [(string) $row['description']];
+            $lines[] = '';
+            $lines[] = '—— 由软件开发管理平台同步 ——';
+            $lines[] = '需求编号：' . (string) $row['req_no'];
+            if ((string) ($row['module_name'] ?? '') !== '') {
+                $lines[] = '所属模块：' . (string) $row['module_name'];
+            }
+            $desc = implode("\n", $lines);
         }
+        $extra = [
+            'assignee_id' => $fAssigneeId,
+            'state_id' => $fStateId,
+            'start_at' => $startTs,
+            'end_at' => $dueTs,
+        ];
         try {
-            [$taskId, $taskNo, $taskUrl] = qly_pingcode_create_task(
-                (string) $row['title'],
-                implode("\n", $lines),
-                $projectId,
-                $typeId
-            );
+            [$taskId, $taskNo, $taskUrl] = qly_pingcode_create_task($title, $desc, $projectId, $typeId, $fPriorityId, $extra);
+            // 标签：逐个建/挂（失败不阻塞主体，记入错误提示）
+            foreach ($fTags as $tagName) {
+                try {
+                    $tagId = qly_pingcode_ensure_tag($tagName, $projectId);
+                    if ($tagId !== '') {
+                        qly_pingcode_attach_tag($taskId, $tagId);
+                    }
+                } catch (Throwable $te) {
+                    $errors[] = (string) $row['req_no'] . ' 标签「' . $tagName . '」：' . $te->getMessage();
+                }
+            }
         } catch (Throwable $e) {
             $errors[] = (string) $row['req_no'] . '：' . $e->getMessage();
             $skipCount++;
@@ -726,15 +808,18 @@ function qly_api_devreqs_sync_task(): void
             'pingcode_synced_at' => $now,
             'updated_at' => $now,
         ]);
-        qly_log($user, '需求开发', (string) $row['req_no'], '同步到 PingCode：' . $row['title'] . ($taskNo !== '' ? '（' . $taskNo . '）' : ''));
+        qly_log($user, '需求开发', (string) $row['req_no'], '同步到 PingCode：' . $title . ($taskNo !== '' ? '（' . $taskNo . '）' : ''));
         $okCount++;
     }
     if ($okCount === 0) {
         if ($errors) {
             qly_fail('同步失败：' . implode('；', array_slice($errors, 0, 3)));
         }
-        qly_fail('没有可同步的需求（需处于开发中心、由您负责且尚未同步）');
+        qly_fail('没有可同步的需求（需处于开发中心且尚未同步）');
     }
-    $msg = '已同步 ' . $okCount . ' 条到 PingCode' . ($skipCount > 0 ? '，另有 ' . $skipCount . ' 条已跳过（状态不符/无权限/已同步）' : '');
+    $msg = '已同步 ' . $okCount . ' 条到 PingCode' . ($skipCount > 0 ? '，另有 ' . $skipCount . ' 条已跳过（状态不符/已同步）' : '');
+    if ($errors) {
+        $msg .= '；部分标签未生效：' . implode('；', array_slice($errors, 0, 2));
+    }
     qly_ok(['affected' => $okCount, 'skipped' => $skipCount], $msg);
 }

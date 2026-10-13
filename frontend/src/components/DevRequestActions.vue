@@ -19,12 +19,12 @@ import {
   developDevRequest,
   getDevRequest,
   reviewDevRequest,
-  syncTaskDevRequest,
   updateDevRequest,
   type DevAttachmentPayload,
 } from '@/api/devreq'
 import { canDevReq, canReviewReq, isAdmin } from '@/constants/user'
 import AttachmentUpload from '@/components/AttachmentUpload.vue'
+import PingcodeSyncDialog from '@/components/PingcodeSyncDialog.vue'
 import type { Attachment, DevRequest } from '@/types'
 
 const props = defineProps<{ req: DevRequest; link?: boolean }>()
@@ -279,21 +279,10 @@ async function onBattlePublish(): Promise<void> {
   }
 }
 
-/* —— 同步任务到 PingCode（开发中心） —— */
-async function onSyncTask(): Promise<void> {
-  await ElMessageBox.confirm(
-    `确定将「${props.req.title}」同步到 PingCode 吗？将在快工单项目创建一条「史诗」工作项。`,
-    '同步任务',
-    { confirmButtonText: '确定同步', cancelButtonText: '取消', type: 'info' },
-  )
-  busy.value = true
-  try {
-    await syncTaskDevRequest([props.req.id])
-    ElMessage.success('已同步到 PingCode')
-    emit('refresh')
-  } finally {
-    busy.value = false
-  }
+/* —— 同步任务到 PingCode（开发中心；弹窗填写关键字段） —— */
+const syncDialogVisible = ref(false)
+function onSyncTask(): void {
+  syncDialogVisible.value = true
 }
 </script>
 
@@ -314,7 +303,6 @@ async function onSyncTask(): Promise<void> {
 
     <!-- 开发中心：同步任务到 PingCode（仅未同步时显示按钮；同步成功后操作栏不再显示相关内容） -->
     <el-button v-if="showSyncTask" v-bind="btnPrimary" :loading="busy" @click="onSyncTask">同步任务</el-button>
-
     <!-- 修改 / 删除（评审前；提交人本人或管理员） -->
     <el-button v-if="showEdit" v-bind="btnPrimary" @click="openEdit">修改</el-button>
     <el-button v-if="showDelete" v-bind="btnDanger" :loading="busy" @click="onDelete">删除</el-button>
@@ -391,6 +379,16 @@ async function onSyncTask(): Promise<void> {
         <el-button type="primary" :loading="submitting" @click="onDialogSubmit">确定</el-button>
       </template>
     </el-dialog>
+
+    <PingcodeSyncDialog
+      v-model="syncDialogVisible"
+      :ids="[props.req.id]"
+      single
+      :default-title="props.req.title"
+      :default-description="props.req.description"
+      :default-priority="props.req.priority"
+      @done="emit('refresh')"
+    />
   </div>
 </template>
 
