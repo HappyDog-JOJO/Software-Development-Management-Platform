@@ -98,6 +98,8 @@ function qly_devreq_row_public(array $r): array
         'pingcodeTaskNo' => $r['pingcode_task_no'] ?? null,
         'pingcodeTaskUrl' => $r['pingcode_task_url'] ?? null,
         'pingcodeSyncedAt' => $r['pingcode_synced_at'] ?? null,
+        'assigneeId' => $r['assignee_id'] ?? null,
+        'assigneeName' => $r['assignee_name'] ?? null,
         'poolAt' => $r['pool_at'],
         'designAt' => $r['design_at'],
         'battleAt' => $r['battle_at'],
@@ -167,6 +169,12 @@ function qly_devreq_filters(): array
         $params[':kw1'] = $kw;
         $params[':kw2'] = $kw;
         $params[':kw3'] = $kw;
+    }
+    // 负责人筛选（PingCode 成员 id）
+    $assigneeId = (string) qly_input('assigneeId', '');
+    if ($assigneeId !== '') {
+        $where .= ' AND i.assignee_id = :asg';
+        $params[':asg'] = $assigneeId;
     }
     return [$where, $params];
 }
@@ -771,6 +779,21 @@ function qly_api_devreqs_sync_task(): void
     if ($typeId === '') {
         qly_fail('未在 PingCode 项目「' . $projectRef . '」中找到「史诗」类型，请检查项目的工作项类型配置');
     }
+    // 负责人姓名（弹窗选的是 PingCode 成员 id）：同步时一并落库，便于列表展示
+    $fAssigneeName = '';
+    if ($fAssigneeId !== '') {
+        try {
+            $opts = qly_pingcode_task_options($projectId, $typeId);
+            foreach (($opts['members'] ?? []) as $m) {
+                if ((string) ($m['id'] ?? '') === $fAssigneeId) {
+                    $fAssigneeName = (string) ($m['name'] ?? '');
+                    break;
+                }
+            }
+        } catch (Throwable $e) {
+            $fAssigneeName = '';
+        }
+    }
     $single = count($targets) === 1;
     $now = date('Y-m-d H:i:s');
     $okCount = 0;
@@ -835,6 +858,8 @@ function qly_api_devreqs_sync_task(): void
             'pingcode_task_no' => $taskNo !== '' ? $taskNo : null,
             'pingcode_task_url' => $taskUrl !== '' ? $taskUrl : null,
             'pingcode_synced_at' => $now,
+            'assignee_id' => $fAssigneeId !== '' ? $fAssigneeId : null,
+            'assignee_name' => $fAssigneeName !== '' ? $fAssigneeName : null,
             'updated_at' => $now,
         ]);
         qly_log($user, '需求开发', (string) $row['req_no'], '同步到 PingCode：' . $title . ($taskNo !== '' ? '（' . $taskNo . '）' : ''));

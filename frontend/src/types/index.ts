@@ -427,6 +427,9 @@ export interface DevRequest {
   pingcodeTaskNo: string | null
   pingcodeTaskUrl: string | null
   pingcodeSyncedAt: string | null
+  /** 负责人（同步到 PingCode 时选定的成员） */
+  assigneeId: string | null
+  assigneeName: string | null
   poolAt: string | null
   designAt: string | null
   battleAt: string | null
@@ -461,6 +464,8 @@ export interface DevQuery {
   /** 上线时间范围筛选（发布上线记录页） */
   releasedStart?: string
   releasedEnd?: string
+  /** 负责人筛选（PingCode 成员 id） */
+  assigneeId?: string
   page?: number
   pageSize?: number
   sortField?: 'createdAt' | 'priority' | 'releasedAt'

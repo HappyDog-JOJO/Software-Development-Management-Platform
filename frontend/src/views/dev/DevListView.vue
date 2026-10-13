@@ -13,7 +13,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import * as XLSX from 'xlsx'
 import { useDictStore } from '@/stores/dict'
 import { useAuthStore } from '@/stores/auth'
-import { battlePublishDevRequest, developDevRequest, fetchDevRequests, setDevRequestPriority } from '@/api/devreq'
+import { battlePublishDevRequest, developDevRequest, fetchDevRequests, fetchPingcodeOptions, setDevRequestPriority } from '@/api/devreq'
+import type { PingcodeOption } from '@/api/devreq'
 import { exportReleasedLog } from '@/api/log'
 import { DEV_PRIORITY_CLASS, DEV_PRIORITY_OPTIONS, DEV_STATUS_CLASS, DEV_STATUS_OPTIONS } from '@/constants/devreq'
 import { canDevReq, canReviewReq, isAdmin, ROLE_PM } from '@/constants/user'
@@ -95,6 +96,7 @@ const DEV_COL_DEFS: Record<string, DevColDef> = {
   reqNo: { label: '需求编号', width: 200 },
   title: { label: '需求标题', minWidth: 180 },
   pingcodeTask: { label: 'PingCode', width: 110 },
+  assigneeName: { label: '负责人', width: 100 },
   moduleName: { label: '模块', width: 80 },
   priority: { label: '优先级', width: 78, align: 'center', sortable: true },
   status: { label: '状态', width: 100, align: 'center' },
@@ -146,6 +148,10 @@ const devColumns = computed(() =>
       if (c.key === 'pingcodeTask' && !isBattleStage.value && !isReleasedStage.value) {
         return false
       }
+      // 负责人列：开发中心 + 发布上线记录页展示
+      if (c.key === 'assigneeName' && !isBattleStage.value && !isReleasedStage.value) {
+        return false
+      }
       if (c.key === 'releasedAt' && !isReleasedStage.value) {
         return false
       }
@@ -185,10 +191,26 @@ const filters = reactive({
   priority: '' as DevPriority | '',
   status: '' as DevStatus | '',
   moduleId: undefined as number | undefined,
+  /** 负责人筛选（PingCode 成员 id） */
+  assigneeId: '' as string,
   /** 上线时间范围（发布上线记录页） */
   releasedStart: '',
   releasedEnd: '',
 })
+
+/** PingCode 项目成员（用于「负责人」筛选下拉；开发中心/发布上线记录页） */
+const assigneeOptions = ref<PingcodeOption[]>([])
+/** 当前页是否展示「负责人」筛选与列：开发中心 + 发布上线记录页 */
+const showAssignee = computed(() => isBattleStage.value || isReleasedStage.value)
+async function loadAssigneeOptions(): Promise<void> {
+  if (assigneeOptions.value.length) return
+  try {
+    const res = await fetchPingcodeOptions()
+    assigneeOptions.value = res.members
+  } catch {
+    assigneeOptions.value = []
+  }
+}
 
 /** 需求池可批量「开发」的勾选行 */
 const developableSelected = computed(() => selectedRows.value.filter((r) => r.status === '需求池'))
@@ -303,6 +325,7 @@ const activeFilterCount = computed(() => {
   if (filters.priority) n += 1
   if (filters.status) n += 1
   if (filters.moduleId) n += 1
+  if (filters.assigneeId) n += 1
   if (filters.releasedStart || filters.releasedEnd) n += 1
   if (filters.keyword) n += 1
   return n
@@ -323,6 +346,7 @@ function buildQuery(): DevQuery {
     keyword: filters.keyword.trim() || undefined,
     priority: filters.priority || undefined,
     moduleId: filters.moduleId,
+    assigneeId: showAssignee.value ? filters.assigneeId || undefined : undefined,
     releasedStart: isReleasedStage.value ? filters.releasedStart || undefined : undefined,
     releasedEnd: isReleasedStage.value ? filters.releasedEnd || undefined : undefined,
     sortField: sortField.value,
@@ -375,6 +399,7 @@ async function onExport(): Promise<void> {
       需求标题: r.title,
       模块: r.moduleName || '—',
       优先级: r.priority,
+      负责人: r.assigneeName || '—',
       提交人: r.submitterName,
       提交部门: r.submitterDepartmentName || '未分配部门',
       提交时间: fmtDateTime(r.createdAt),
@@ -387,8 +412,8 @@ async function onExport(): Promise<void> {
     }
     const sheet = XLSX.utils.json_to_sheet(rows)
     sheet['!cols'] = [
-      { wch: 20 }, { wch: 28 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 14 },
-      { wch: 18 }, { wch: 18 }, { wch: 10 },
+      { wch: 20 }, { wch: 28 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 10 },
+      { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 10 },
     ]
     const book = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(book, sheet, '发布上线记录')
@@ -412,6 +437,7 @@ function onReset(): void {
   filters.priority = ''
   filters.status = ''
   filters.moduleId = undefined
+  filters.assigneeId = ''
   filters.releasedStart = ''
   filters.releasedEnd = ''
   page.value = 1
@@ -478,6 +504,7 @@ function registerColumns(): void {
     { key: 'reqNo', label: '需求编号' },
     { key: 'title', label: '需求标题' },
     { key: 'pingcodeTask', label: 'PingCode' },
+    { key: 'assigneeName', label: '负责人' },
     { key: 'moduleName', label: '模块' },
     { key: 'priority', label: '优先级' },
     { key: 'status', label: '状态' },
@@ -492,6 +519,7 @@ function registerColumns(): void {
 onMounted(() => {
   registerColumns()
   void dict.load()
+  void loadAssigneeOptions()
   void load()
 })
 
@@ -538,6 +566,13 @@ watch(
           <span class="filter-inline__label">模块</span>
           <el-select v-model="filters.moduleId" placeholder="全部模块" clearable style="width: 140px" @change="load">
             <el-option v-for="it in dict.allOf('module')" :key="it.id" :label="it.name" :value="it.id" />
+          </el-select>
+        </div>
+        <!-- 开发中心 / 发布上线记录页：按负责人筛选（PingCode 成员） -->
+        <div v-if="showAssignee" class="filter-inline__item">
+          <span class="filter-inline__label">负责人</span>
+          <el-select v-model="filters.assigneeId" placeholder="全部负责人" clearable filterable style="width: 150px" @change="load">
+            <el-option v-for="m in assigneeOptions" :key="m.id" :label="m.name" :value="m.id" />
           </el-select>
         </div>
         <!-- 开发中心 / 需求池等：按状态筛选 -->
@@ -704,6 +739,12 @@ watch(
 
               <template v-else-if="c.key === 'moduleName'">
                 <span class="cell-nowrap">{{ row.moduleName || '—' }}</span>
+              </template>
+
+              <!-- 负责人（同步到 PingCode 时选定的成员） -->
+              <template v-else-if="c.key === 'assigneeName'">
+                <span v-if="row.assigneeName" class="cell-nowrap">{{ row.assigneeName }}</span>
+                <span v-else class="text-placeholder">—</span>
               </template>
 
               <!-- PingCode 同步状态（开发中心/发布上线展示：已同步显示工作项编号链接，未同步显示「未同步」） -->

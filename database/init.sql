@@ -261,6 +261,8 @@ CREATE TABLE IF NOT EXISTS `dev_request` (
   `pingcode_task_no` VARCHAR(64) DEFAULT NULL COMMENT 'PingCode 任务编号（如 KG-123）',
   `pingcode_task_url` VARCHAR(500) DEFAULT NULL COMMENT 'PingCode 任务链接',
   `pingcode_synced_at` DATETIME DEFAULT NULL COMMENT '最近同步到 PingCode 时间',
+  `assignee_id` VARCHAR(64) DEFAULT NULL COMMENT 'PingCode 负责人 id',
+  `assignee_name` VARCHAR(60) DEFAULT NULL COMMENT 'PingCode 负责人姓名',
   `pool_at` DATETIME DEFAULT NULL COMMENT '进入需求池时间（评审通过）',
   `battle_at` DATETIME DEFAULT NULL COMMENT '进入开发中心时间',
   `inspect_at` DATETIME DEFAULT NULL COMMENT '废弃（质量中心已下线，仅保留历史数据）',
