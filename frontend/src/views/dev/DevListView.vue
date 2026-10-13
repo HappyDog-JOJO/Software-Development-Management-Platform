@@ -30,6 +30,27 @@ const props = defineProps<{ stage?: DevStatus; mine?: boolean; released?: boolea
 const auth = useAuthStore()
 
 /**
+ * 「我的需求」页管理员的可见范围切换（仅管理员展示，记忆选择）：
+ * all = 查看全部（默认，展示全公司所有人的需求），mine = 只看我的。
+ */
+const ADMIN_VIEW_KEY = 'command_dev_reqs_admin_view'
+const adminView = ref<'all' | 'mine'>(
+  localStorage.getItem(ADMIN_VIEW_KEY) === 'mine' ? 'mine' : 'all',
+)
+/** 仅管理员在「我的需求」页显示范围切换 */
+const showScopeSwitch = computed(() => props.mine === true && auth.isAdmin)
+/** 是否按「只看我的」过滤：管理员切到「只看我的」时为真，其余情况沿用路由的 mine 参数 */
+const scopeMine = computed(() =>
+  showScopeSwitch.value ? adminView.value === 'mine' : props.mine === true,
+)
+
+function onAdminViewChange(): void {
+  localStorage.setItem(ADMIN_VIEW_KEY, adminView.value)
+  page.value = 1
+  void load()
+}
+
+/**
  * 本列表页的存储标识（列宽记忆 / 列配置共用）。
  * 本组件被 5 个环节页复用（我的需求/评审池/需求池/设计中心/开发中心）：
  * 路由侧已给各页独立的组件实例（router-view 按 route.name 加 key），
@@ -142,8 +163,16 @@ const devColumns = computed(() =>
     .map((c) => ({ key: c.key, ...DEV_COL_DEFS[c.key] })),
 )
 
-const stageLabel = computed(() => (props.mine ? '我的需求' : (props.stage ?? '全部需求')))
+const stageLabel = computed(() => {
+  if (showScopeSwitch.value && adminView.value === 'all') {
+    return '全部需求'
+  }
+  return props.mine ? '我的需求' : (props.stage ?? '全部需求')
+})
 const stageDesc = computed(() => {
+  if (showScopeSwitch.value && adminView.value === 'all') {
+    return '管理员视角：全公司所有人的需求与最新进度（可切换为「只看我的」）。'
+  }
   switch (props.stage) {
     case '评审池':
       return '所有新需求在此等待评审：通过即进入需求池，待定暂留本池（可再改判），驳回则需求作废。'
@@ -291,7 +320,7 @@ const sortOrder = ref<'ASC' | 'DESC'>('DESC')
 function buildQuery(): DevQuery {
   return {
     status: props.stage ?? (filters.status || undefined),
-    mine: props.mine ? '1' : undefined,
+    mine: scopeMine.value ? '1' : undefined,
     hidePending: showHidePending.value && hidePending.value ? '1' : undefined,
     keyword: filters.keyword.trim() || undefined,
     priority: filters.priority || undefined,
@@ -591,6 +620,16 @@ watch(
     <div class="moon-card moon-card--tight">
       <div class="toolbar toolbar--actions-only">
         <div class="toolbar__actions">
+          <!-- 我的需求（管理员）：查看全部 / 只看我的（默认查看全部，记忆选择） -->
+          <el-radio-group
+            v-if="showScopeSwitch"
+            v-model="adminView"
+            size="small"
+            @change="onAdminViewChange"
+          >
+            <el-radio-button value="all">查看全部</el-radio-button>
+            <el-radio-button value="mine">只看我的</el-radio-button>
+          </el-radio-group>
           <!-- 我的需求 / 评审池：隐藏评审待定的需求（默认开启，记忆选择） -->
           <el-switch
             v-if="showHidePending"
