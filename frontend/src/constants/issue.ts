@@ -101,8 +101,6 @@ export function logTypeClass(type: string): string {
       return 'pill pill--green'
     case '需求评审':
       return 'pill pill--yellow'
-    case '需求设计':
-      return 'pill pill--primary'
     case '需求开发':
       return 'pill pill--pink'
     case '需求发布':

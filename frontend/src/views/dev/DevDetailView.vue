@@ -2,8 +2,8 @@
 /**
  * 需求详情页：环节步骤条 + 需求信息卡 + 流转时间线（样式与布局对齐问题详情页）。
  * - 顶部工具栏：返回列表 + 操作区（DevRequestActions 按角色与状态动态渲染）
- * - 信息卡：头部标识区（编号/标签/时间戳）+ 左（元信息列表）+ 右（描述/设计文档/附件）
- * - 时间线：提交、评审、设计、开发与发布的全部记录（最新在上）
+ * - 信息卡：头部标识区（编号/标签/时间戳）+ 左（元信息列表）+ 右（描述/附件）
+ * - 时间线：提交、评审、开发与发布的全部记录（最新在上）
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -61,7 +61,6 @@ async function load(): Promise<void> {
 /* —— 附件按场景分组 —— */
 const sceneTitle: Record<string, string> = {
   submit: '需求附件',
-  design: '设计文档',
   reject: '驳回说明附件',
   done: '完成凭证',
   release: '上线材料',
@@ -71,7 +70,7 @@ const groupedAtts = computed(() => {
   const groups: Array<{ scene: string; title: string; items: DevAttachment[] }> = []
   if (!detail.value) return groups
   const atts = detail.value.attachments
-  for (const scene of ['submit', 'design', 'reject', 'done', 'release']) {
+  for (const scene of ['submit', 'reject', 'done', 'release']) {
     const items = atts.filter((a) => a.scene === scene)
     if (items.length) {
       groups.push({ scene, title: sceneTitle[scene] ?? scene, items })
@@ -133,7 +132,7 @@ watch(reqId, load)
       </div>
       <el-alert v-else type="info" :closable="false" title="该需求已被提交人取消" />
 
-      <!-- 需求信息卡：头部标识区 + 左（元信息）+ 右（描述/设计文档/附件） -->
+      <!-- 需求信息卡：头部标识区 + 左（元信息）+ 右（描述/附件） -->
       <div class="moon-card moon-card--moonlit issue-card">
         <div class="issue-head">
           <div class="issue-head__main">
@@ -188,8 +187,8 @@ watch(reqId, load)
                 <span class="meta-row__value">{{ detail.moduleName || '—' }}</span>
               </div>
               <div class="meta-row">
-                <span class="meta-row__label">产品经理</span>
-                <span class="meta-row__value">{{ detail.pmName || '待认领' }}</span>
+                <span class="meta-row__label">进入开发</span>
+                <span class="meta-row__value">{{ detail.battleAt ? fmtDateTime(detail.battleAt) : '待开发' }}</span>
               </div>
               <div class="meta-row">
                 <span class="meta-row__label">评审人</span>
@@ -202,14 +201,6 @@ watch(reqId, load)
               <div v-if="detail.reviewComment" class="meta-row">
                 <span class="meta-row__label">评审意见</span>
                 <span class="meta-row__value">{{ detail.reviewComment }}</span>
-              </div>
-              <div class="meta-row">
-                <span class="meta-row__label">开发分支</span>
-                <span class="meta-row__value mono">{{ detail.branch || '—' }}</span>
-              </div>
-              <div class="meta-row">
-                <span class="meta-row__label">负责人</span>
-                <span class="meta-row__value">{{ detail.devLeaderName || '—' }}</span>
               </div>
               <div class="meta-row">
                 <span class="meta-row__label">上线时间</span>
@@ -226,30 +217,6 @@ watch(reqId, load)
             <div class="info-desc">
               <div class="info-desc__label">需求描述</div>
               <div class="info-desc__body">{{ detail.description }}</div>
-            </div>
-
-            <!-- 设计文档（网址，新窗口打开） -->
-            <div v-if="detail.designUrl" class="info-attachments">
-              <div class="info-attachments__label">设计文档（{{ detail.pmName || '—' }}）</div>
-              <div class="attachment-list">
-                <a
-                  class="attachment-chip"
-                  :href="detail.designUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  :title="`打开设计文档：${detail.designUrl}`"
-                >
-                  <span class="attachment-chip__icon" aria-hidden="true">URL</span>
-                  <span class="attachment-chip__name cell-ellipsis">{{ detail.designUrl }}</span>
-                  <span class="attachment-chip__act">打开</span>
-                </a>
-              </div>
-            </div>
-
-            <!-- 设计说明 -->
-            <div v-if="detail.designDoc" class="info-desc info-desc--spaced">
-              <div class="info-desc__label">设计说明（{{ detail.pmName || '—' }}）</div>
-              <div class="info-desc__body">{{ detail.designDoc }}</div>
             </div>
 
             <!-- 附件（按场景分组，chip 样式与问题详情一致） -->
@@ -280,7 +247,7 @@ watch(reqId, load)
       <div class="moon-card">
         <div class="section-title">
           流转时间线
-          <span class="section-title__hint">提交、评审、设计、开发与发布的全部记录，最新在上</span>
+          <span class="section-title__hint">提交、评审、开发与发布的全部记录，最新在上</span>
         </div>
 
         <el-timeline v-if="detail.logs.length" class="record-timeline">
@@ -568,7 +535,7 @@ watch(reqId, load)
   }
 }
 
-/* 描述 / 设计说明块 */
+/* 描述说明块 */
 .info-desc__label {
   font-size: 13px;
   color: var(--color-text-secondary);
@@ -590,7 +557,7 @@ watch(reqId, load)
   word-break: break-word;
 }
 
-/* 设计文档 / 附件分组 */
+/* 附件分组 */
 .info-attachments {
   margin-top: 16px;
 }

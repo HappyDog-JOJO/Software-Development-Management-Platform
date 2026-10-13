@@ -3,9 +3,11 @@
  * 需求操作组件：按「角色 + 需求状态」动态渲染操作按钮与弹窗。
  * 列表页与详情页共用；操作成功后 emit('refresh') 让父级重新拉数据。
  * 覆盖动作：评审通过（备注选填）/ 待定（备注必填，暂留评审池）/ 驳回（备注必填，作废终态）、
- *           认领、提交设计（设计文档为网址）、发布上线（开发中心，负责人/管理员）、
+ *           开发（需求池 → 开发中心）、发布上线（开发中心，开发工程师/管理员）、
  *           修改/删除（提交人本人或管理员，仅评审池）。
  * link：列表内传 true → 文字按钮（与各列表页操作列一致）；详情页不传 → 实心按钮。
+ * 说明：原「设计中心」环节已移除——需求池不再经产品经理「认领设计」，改由开发工程师/管理员
+ *       点「开发」直接进入开发中心；因此不再有「提交设计」弹窗。
  */
 import { computed, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -13,19 +15,17 @@ import { useAuthStore } from '@/stores/auth'
 import { useDictStore } from '@/stores/dict'
 import {
   battlePublishDevRequest,
-  claimDevRequest,
   deleteDevRequest,
-  designDevRequest,
-  fetchDevCandidates,
+  developDevRequest,
   getDevRequest,
   reviewDevRequest,
   syncTaskDevRequest,
   updateDevRequest,
   type DevAttachmentPayload,
 } from '@/api/devreq'
-import { canDesignReq, canReviewReq, isAdmin } from '@/constants/user'
+import { canDevReq, canReviewReq, isAdmin } from '@/constants/user'
 import AttachmentUpload from '@/components/AttachmentUpload.vue'
-import type { Attachment, DevCandidate, DevRequest } from '@/types'
+import type { Attachment, DevRequest } from '@/types'
 
 const props = defineProps<{ req: DevRequest; link?: boolean }>()
 const emit = defineEmits<{ (e: 'refresh'): void }>()
@@ -34,10 +34,6 @@ const auth = useAuthStore()
 const dict = useDictStore()
 
 const admin = computed(() => isAdmin(auth.user?.roles))
-const isClaimer = computed(() => props.req.pmId !== null && props.req.pmId === auth.user?.id)
-const isDevLeader = computed(
-  () => props.req.devLeaderId !== null && props.req.devLeaderId === auth.user?.id,
-)
 const isSubmitter = computed(() => props.req.submitterId === auth.user?.id)
 
 /**
@@ -60,25 +56,20 @@ const btnDanger = computed(() =>
 const showReview = computed(
   () => props.req.status === '评审池' && canReviewReq(auth.user?.roles),
 )
-const showClaim = computed(
-  () => props.req.status === '需求池' && canDesignReq(auth.user?.roles),
+/** 开发（认领开发）：需求池，开发工程师 / 管理员 —— 点击直接进入开发中心 */
+const showDevelop = computed(
+  () => props.req.status === '需求池' && canDevReq(auth.user?.roles),
 )
-const showDesign = computed(
-  () =>
-    props.req.status === '设计中心' &&
-    canDesignReq(auth.user?.roles) &&
-    (admin.value || isClaimer.value),
-)
-/** 开发中心发布上线：负责人 或 管理员 */
+/** 开发中心发布上线：开发工程师 或 管理员 */
 const showBattlePublish = computed(
-  () => props.req.status === '开发中心' && (admin.value || isDevLeader.value),
+  () => props.req.status === '开发中心' && canDevReq(auth.user?.roles),
 )
-/** 同步任务到 PingCode：与发布上线同权限（负责人/管理员），仅开发中心且尚未同步。
+/** 同步任务到 PingCode：与发布上线同权限（开发工程师/管理员），仅开发中心且尚未同步。
  *  同步成功后操作栏不再显示同步相关内容（任务编号与链接由列表「PingCode」列承载）。 */
 const showSyncTask = computed(
   () =>
     props.req.status === '开发中心' &&
-    (admin.value || isDevLeader.value) &&
+    canDevReq(auth.user?.roles) &&
     !props.req.pingcodeTaskId,
 )
 /** 修改/删除：提交人本人（自己的）/ 管理员（全部），仅评审池阶段（评审开始后不可改删） */
@@ -89,8 +80,7 @@ const showDelete = showEdit
 const hasActions = computed(
   () =>
     showReview.value ||
-    showClaim.value ||
-    showDesign.value ||
+    showDevelop.value ||
     showBattlePublish.value ||
     showSyncTask.value ||
     showEdit.value,
@@ -115,16 +105,16 @@ async function onReviewPass(): Promise<void> {
   }
 }
 
-async function onClaim(): Promise<void> {
-  await ElMessageBox.confirm(`认领需求「${props.req.title}」并进入设计中心吗？`, '认领任务', {
-    confirmButtonText: '认领',
-    cancelButtonText: '取消',
-    type: 'info',
-  })
+async function onDevelop(): Promise<void> {
+  await ElMessageBox.confirm(
+    `确定开发需求「${props.req.title}」吗？确认后需求进入开发中心。`,
+    '开发需求',
+    { confirmButtonText: '开发', cancelButtonText: '取消', type: 'info' },
+  )
   busy.value = true
   try {
-    await claimDevRequest(props.req.id)
-    ElMessage.success('认领成功，已进入设计中心')
+    await developDevRequest(props.req.id)
+    ElMessage.success('已进入开发中心，开始开发吧')
     emit('refresh')
   } finally {
     busy.value = false
@@ -150,8 +140,8 @@ async function onDelete(): Promise<void> {
 /* —— 弹窗通用 —— */
 const dialogVisible = ref(false)
 const submitting = ref(false)
-/** 当前打开的弹窗：修改 / 驳回 / 提交设计 */
-const dialogKind = ref<'edit' | 'reject' | 'design'>('reject')
+/** 当前打开的弹窗：修改 / 驳回 */
+const dialogKind = ref<'edit' | 'reject'>('reject')
 const toPayload = (list: Attachment[]): DevAttachmentPayload[] =>
   list.map((a) => ({ url: a.url, name: a.name, size: a.size, mimeType: a.mimeType }))
 
@@ -243,10 +233,8 @@ function openReject(mode: 'reject' | 'pending'): void {
 function onDialogSubmit(): void {
   if (dialogKind.value === 'edit') {
     void onEditSubmit()
-  } else if (dialogKind.value === 'reject') {
-    void onRejectSubmit()
   } else {
-    void onDesignSubmit()
+    void onRejectSubmit()
   }
 }
 
@@ -274,7 +262,7 @@ async function onRejectSubmit(): Promise<void> {
   }
 }
 
-/* —— 发布上线（开发中心 → 已上线；负责人或管理员） —— */
+/* —— 发布上线（开发中心 → 已上线；开发工程师或管理员） —— */
 async function onBattlePublish(): Promise<void> {
   await ElMessageBox.confirm(
     `确定将「${props.req.title}」发布上线吗？发布后立即上线（记录上线时间），不可撤回。`,
@@ -307,71 +295,6 @@ async function onSyncTask(): Promise<void> {
     busy.value = false
   }
 }
-
-/* —— 提交设计（设计中心；设计文档为网址，负责人默认商辂） —— */
-const designForm = reactive({
-  designUrl: '',
-  designDoc: '',
-  branch: '',
-  devLeaderId: undefined as number | undefined,
-})
-const devs = ref<DevCandidate[]>([])
-
-async function openDesign(): Promise<void> {
-  designForm.designUrl = ''
-  designForm.designDoc = ''
-  designForm.branch = ''
-  designForm.devLeaderId = undefined
-  dialogKind.value = 'design'
-  dialogVisible.value = true
-  if (!devs.value.length) {
-    try {
-      devs.value = await fetchDevCandidates()
-    } catch {
-      devs.value = []
-    }
-  }
-  // 负责人默认选中「商辂」（存在该候选时）
-  if (!designForm.devLeaderId) {
-    const def = devs.value.find((d) => d.name === '商辂' || d.account === '商辂')
-    if (def) {
-      designForm.devLeaderId = def.id
-    }
-  }
-}
-
-async function onDesignSubmit(): Promise<void> {
-  if (!designForm.designUrl.trim()) {
-    ElMessage.warning('请填写设计文档链接')
-    return
-  }
-  if (!/^https?:\/\/\S+$/i.test(designForm.designUrl.trim())) {
-    ElMessage.warning('设计文档链接需以 http/https 开头')
-    return
-  }
-  if (!designForm.branch.trim()) {
-    ElMessage.warning('请填写开发分支')
-    return
-  }
-  if (!designForm.devLeaderId) {
-    ElMessage.warning('请选择负责人')
-    return
-  }
-  submitting.value = true
-  try {
-    await designDevRequest(props.req.id, {
-      designUrl: designForm.designUrl.trim(),
-      designDoc: designForm.designDoc.trim(),
-      branch: designForm.branch.trim(),
-      devLeaderId: designForm.devLeaderId,
-    })
-    ElMessage.success('设计已提交，任务进入开发中心')
-    dialogVisible.value = false
-    emit('refresh')
-  } finally {
-    submitting.value = false
-  }
-}
 </script>
 
 <template>
@@ -383,11 +306,8 @@ async function onDesignSubmit(): Promise<void> {
       <el-button v-bind="btnDanger" @click="openReject('reject')">驳回</el-button>
     </template>
 
-    <!-- 需求池 -->
-    <el-button v-if="showClaim" v-bind="btnPrimary" :loading="busy" @click="onClaim">认领设计</el-button>
-
-    <!-- 设计中心 -->
-    <el-button v-if="showDesign" v-bind="btnPrimary" @click="openDesign">提交设计</el-button>
+    <!-- 需求池：开发（开发工程师/管理员；点击直接进入开发中心） -->
+    <el-button v-if="showDevelop" v-bind="btnPrimary" :loading="busy" @click="onDevelop">开发</el-button>
 
     <!-- 开发中心：发布上线（立即上线，记录上线时间） -->
     <el-button v-if="showBattlePublish" v-bind="btnPrimary" :loading="busy" @click="onBattlePublish">发布上线</el-button>
@@ -403,7 +323,6 @@ async function onDesignSubmit(): Promise<void> {
       v-model="dialogVisible"
       :title="
         dialogKind === 'edit' ? '修改需求（评审前）'
-        : dialogKind === 'design' ? '提交设计（设计中心 → 开发中心）'
         : rejectMode === 'pending' ? '评审待定（暂留评审池）'
         : '评审驳回（作废）'
       "
@@ -445,7 +364,7 @@ async function onDesignSubmit(): Promise<void> {
       </template>
 
       <!-- 驳回 / 待定表单 -->
-      <template v-else-if="dialogKind === 'reject'">
+      <template v-else>
         <el-alert
           type="warning"
           :closable="false"
@@ -465,38 +384,6 @@ async function onDesignSubmit(): Promise<void> {
         <div v-if="rejectMode === 'reject'" class="dialog-atts">
           <AttachmentUpload v-model="rejectForm.attachments" :max="9" tip="选填，驳回说明附件，最多 9 个" />
         </div>
-      </template>
-
-      <!-- 设计表单（设计文档为网址） -->
-      <template v-else-if="dialogKind === 'design'">
-        <el-form label-width="92px">
-          <el-form-item label="设计文档" required>
-            <el-input v-model="designForm.designUrl" maxlength="500" placeholder="设计文档链接，如 https://docs.example.com/prd/xxx" />
-          </el-form-item>
-          <el-form-item label="设计说明">
-            <el-input
-              v-model="designForm.designDoc"
-              type="textarea"
-              :rows="5"
-              maxlength="2000"
-              show-word-limit
-              placeholder="功能设计方案要点、交互与边界说明（选填）"
-            />
-          </el-form-item>
-          <el-form-item label="开发分支" required>
-            <el-input v-model="designForm.branch" maxlength="100" placeholder="如 feature/export-center" />
-          </el-form-item>
-          <el-form-item label="负责人" required>
-            <el-select v-model="designForm.devLeaderId" placeholder="选择负责人" style="width: 100%">
-              <el-option
-                v-for="d in devs"
-                :key="d.id"
-                :label="`${d.name}（${d.departmentName || d.account}）`"
-                :value="d.id"
-              />
-            </el-select>
-          </el-form-item>
-        </el-form>
       </template>
 
       <template #footer>

@@ -1,7 +1,6 @@
 import { http } from './request'
 import type {
   Attachment,
-  DevCandidate,
   DevQuery,
   DevRequest,
   DevRequestDetail,
@@ -63,41 +62,19 @@ export function reviewDevRequest(
   return http.post<null>('/api.php?r=devreqs/review', { id, action, ...payload })
 }
 
-/** 产品经理认领：需求池 → 设计中心 */
-export function claimDevRequest(id: number): Promise<null> {
-  return http.post<null>('/api.php?r=devreqs/claim', { id })
+/** 开发（认领开发）：需求池 → 开发中心（开发工程师 / 管理员点「开发」直接进入开发中心） */
+export function developDevRequest(id: number): Promise<null> {
+  return http.post<null>('/api.php?r=devreqs/develop', { id })
 }
 
-/** 设计中心完成设计 → 开发中心（设计文档为网址） */
-export interface DesignPayload {
-  designUrl: string
-  designDoc: string
-  branch: string
-  devLeaderId: number
-}
-
-export function designDevRequest(id: number, payload: DesignPayload): Promise<null> {
-  return http.post<null>('/api.php?r=devreqs/design', { id, ...payload })
-}
-
-/** 开发中心发布上线（负责人/管理员，支持批量）：开发中心 → 已上线（记录上线时间与操作人） */
+/** 开发中心发布上线（开发工程师/管理员，支持批量）：开发中心 → 已上线（记录上线时间与操作人） */
 export function battlePublishDevRequest(ids: number[]): Promise<{ affected: number; skipped: number }> {
   return http.post<{ affected: number; skipped: number }>('/api.php?r=devreqs/battle-publish', { ids })
 }
 
-/** 同步任务到 PingCode（负责人/管理员，支持批量；已同步的自动跳过） */
+/** 同步任务到 PingCode（开发工程师/管理员，支持批量；已同步的自动跳过） */
 export function syncTaskDevRequest(ids: number[]): Promise<{ affected: number; skipped: number }> {
   return http.post<{ affected: number; skipped: number }>('/api.php?r=devreqs/sync-task', { ids })
-}
-
-/** 负责人候选（开发工程师 / 管理员） */
-export function fetchDevCandidates(): Promise<DevCandidate[]> {
-  return http.get<DevCandidate[]>('/api.php?r=devreqs/devs')
-}
-
-/** 设计人候选（产品经理 / 管理员，开发中心筛选用） */
-export function fetchPmCandidates(): Promise<DevCandidate[]> {
-  return http.get<DevCandidate[]>('/api.php?r=devreqs/pms')
 }
 
 export type { Attachment, UploadResult }

@@ -103,14 +103,7 @@ const routes: RouteRecordRaw[] = [
         name: 'DevPool',
         component: () => import('@/views/dev/DevListView.vue'),
         props: { stage: '需求池' },
-        meta: { title: '需求池', roles: [ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN], icon: 'pool', group: '开发管理' },
-      },
-      {
-        path: 'dev/design',
-        name: 'DevDesign',
-        component: () => import('@/views/dev/DevListView.vue'),
-        props: { stage: '设计中心' as DevStatus },
-        meta: { title: '设计中心', roles: [ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN], icon: 'design', group: '开发管理' },
+        meta: { title: '需求池', roles: [ROLE_PM, ROLE_COMMITTEE, ROLE_DEV, ROLE_ADMIN], icon: 'pool', group: '开发管理' },
       },
       {
         path: 'dev/battle',
@@ -135,7 +128,11 @@ const routes: RouteRecordRaw[] = [
         path: 'dev/reqs/:id',
         name: 'DevReqDetail',
         component: () => import('@/views/dev/DevDetailView.vue'),
-        meta: { title: '需求详情', roles: [ROLE_SALES, ROLE_SERVICE, ROLE_MANAGER, ROLE_ADMIN], hidden: true },
+        meta: {
+          title: '需求详情',
+          roles: [ROLE_SALES, ROLE_SERVICE, ROLE_MANAGER, ROLE_ADMIN, ROLE_COMMITTEE, ROLE_PM, ROLE_DEV],
+          hidden: true,
+        },
       },
       {
         path: 'system/users',
@@ -216,8 +213,7 @@ export const MENU: MenuNode[] = [
   { path: '/dev/create', title: '需求提交', icon: 'edit', group: '开发管理', roles: [ROLE_SALES, ROLE_SERVICE, ROLE_MANAGER, ROLE_ADMIN] },
   { path: '/dev/mine', title: '我的需求', icon: 'list', group: '开发管理', roles: [ROLE_SALES, ROLE_SERVICE, ROLE_MANAGER, ROLE_ADMIN] },
   { path: '/dev/review', title: '评审池', icon: 'review', group: '开发管理', roles: [ROLE_COMMITTEE, ROLE_ADMIN] },
-  { path: '/dev/pool', title: '需求池', icon: 'pool', group: '开发管理', roles: [ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN] },
-  { path: '/dev/design', title: '设计中心', icon: 'design', group: '开发管理', roles: [ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN] },
+  { path: '/dev/pool', title: '需求池', icon: 'pool', group: '开发管理', roles: [ROLE_PM, ROLE_COMMITTEE, ROLE_DEV, ROLE_ADMIN] },
   { path: '/dev/battle', title: '开发中心', icon: 'battle', group: '开发管理', roles: [ROLE_DEV, ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN] },
   { path: '/dev/release', title: '发布上线', icon: 'release', group: '开发管理', roles: [ROLE_COMMITTEE, ROLE_ADMIN] },
   // 系统管理（固定在最下）

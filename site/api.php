@@ -109,12 +109,9 @@ $routes = [
     'devreqs/delete' => [['POST'], 'devreqs.php', 'qly_api_devreqs_delete'],
     'devreqs/review' => [['POST'], 'devreqs.php', 'qly_api_devreqs_review'],
     'devreqs/priority' => [['POST'], 'devreqs.php', 'qly_api_devreqs_priority'],
-    'devreqs/claim' => [['POST'], 'devreqs.php', 'qly_api_devreqs_claim'],
-    'devreqs/design' => [['POST'], 'devreqs.php', 'qly_api_devreqs_design'],
+    'devreqs/develop' => [['POST'], 'devreqs.php', 'qly_api_devreqs_develop'],
     'devreqs/battle-publish' => [['POST'], 'devreqs.php', 'qly_api_devreqs_battle_publish'],
     'devreqs/sync-task' => [['POST'], 'devreqs.php', 'qly_api_devreqs_sync_task'],
-    'devreqs/devs' => [['GET'], 'devreqs.php', 'qly_api_devreqs_devs'],
-    'devreqs/pms' => [['GET'], 'devreqs.php', 'qly_api_devreqs_pms'],
 ];
 
 if (!isset($routes[$route])) {

@@ -61,10 +61,7 @@ export function canManageDuty(roles: Role[] | undefined): boolean {
 /** 可评审需求（评审委员 / 管理员；发布上线同权限） */
 export const REVIEW_REQ_ROLES: Role[] = [ROLE_COMMITTEE, ROLE_ADMIN]
 
-/** 可认领/设计需求（产品经理 / 管理员） */
-export const DESIGN_REQ_ROLES: Role[] = [ROLE_PM, ROLE_ADMIN]
-
-/** 可开发作战（开发工程师 / 管理员） */
+/** 开发需求（需求池点「开发」进入开发中心；开发工程师 / 管理员） */
 export const DEV_REQ_ROLES: Role[] = [ROLE_DEV, ROLE_ADMIN]
 
 /** 可评审需求 */
@@ -72,12 +69,7 @@ export function canReviewReq(roles: Role[] | undefined): boolean {
   return hasAny(roles, REVIEW_REQ_ROLES)
 }
 
-/** 可认领/设计需求 */
-export function canDesignReq(roles: Role[] | undefined): boolean {
-  return hasAny(roles, DESIGN_REQ_ROLES)
-}
-
-/** 可开发作战 */
+/** 可开发（认领开发）需求 */
 export function canDevReq(roles: Role[] | undefined): boolean {
   return hasAny(roles, DEV_REQ_ROLES)
 }

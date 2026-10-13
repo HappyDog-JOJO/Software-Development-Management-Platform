@@ -26,7 +26,6 @@ export type LogType =
   | '导出'
   | '提交需求'
   | '需求评审'
-  | '需求设计'
   | '需求开发'
   | '需求发布'
 
@@ -36,7 +35,6 @@ export type LogType =
 export type DevStatus =
   | '评审池'
   | '需求池'
-  | '设计中心'
   | '开发中心'
   | '待发布'
   | '已上线'
@@ -394,10 +392,10 @@ export interface DutyToday {
 
 /* ==================== 需求管理模块 ==================== */
 
-/** 需求附件（scene：submit提交/design设计/reject驳回/done完成/release上线） */
+/** 需求附件（scene：submit提交/reject驳回/done完成/release上线） */
 export interface DevAttachment extends Attachment {
   requestId: number
-  scene: 'submit' | 'design' | 'reject' | 'done' | 'release' | string
+  scene: 'submit' | 'reject' | 'done' | 'release' | string
   createdAt: string
 }
 
@@ -420,15 +418,6 @@ export interface DevRequest {
   reviewedAt: string | null
   /** 评审待定：暂留评审池，之后仍可通过/驳回 */
   reviewPending: boolean
-  pmId: number | null
-  pmName: string | null
-  designDoc: string | null
-  /** 设计文档链接（网址） */
-  designUrl: string | null
-  branch: string | null
-  devLeaderId: number | null
-  devLeaderName: string | null
-  designedAt: string | null
   devDoneNote: string | null
   devDoneAt: string | null
   releasedAt: string | null
@@ -469,10 +458,6 @@ export interface DevQuery {
   mine?: '1'
   /** 隐藏评审待定的需求（我的需求页开关） */
   hidePending?: '1'
-  /** 设计人筛选（开发中心） */
-  pmId?: number
-  /** 负责人筛选（开发中心） */
-  devLeaderId?: number
   /** 上线时间范围筛选（发布上线记录页） */
   releasedStart?: string
   releasedEnd?: string
@@ -480,12 +465,4 @@ export interface DevQuery {
   pageSize?: number
   sortField?: 'createdAt' | 'priority' | 'releasedAt'
   sortOrder?: 'ASC' | 'DESC'
-}
-
-/** 开发工程师候选（指定开发负责人） */
-export interface DevCandidate {
-  id: number
-  account: string
-  name: string
-  departmentName: string | null
 }

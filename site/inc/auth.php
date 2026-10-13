@@ -329,15 +329,15 @@ function qly_can_review_req(array $user): bool
     return qly_has_role($user, [QLY_ROLE_COMMITTEE, QLY_ROLE_ADMIN]);
 }
 
-/** 认领/设计需求：产品经理 / 管理员 */
-function qly_can_design_req(array $user): bool
+/** 开发需求：开发工程师 / 管理员（需求池点「开发」直接进入开发中心） */
+function qly_can_develop_req(array $user): bool
 {
-    return qly_has_role($user, [QLY_ROLE_PM, QLY_ROLE_ADMIN]);
+    return qly_has_role($user, [QLY_ROLE_DEV, QLY_ROLE_ADMIN]);
 }
 
 /** 需求单条可见范围（与 qly_devreq_scope_where 保持同源）：
- * 评审委员/管理员全量；产品经理可见需求池全部 + 自己认领的；
- * 开发工程师可见自己负责的主任务；提交人可见自己的。 */
+ * 评审委员/管理员全量；开发工程师可见需求池（待开发）与开发中心（自己可发布）；
+ * 提交人可见自己的。 */
 function qly_devreq_visible(array $user, array $r): bool
 {
     $roles = qly_parse_roles(isset($user['roles']) ? (string) $user['roles'] : null);
@@ -348,17 +348,13 @@ function qly_devreq_visible(array $user, array $r): bool
     if ($uid > 0 && (int) ($r['submitter_id'] ?? 0) === $uid) {
         return true;
     }
-    if ($uid > 0 && (int) ($r['pm_id'] ?? 0) === $uid) {
-        return true;
-    }
-    if ($uid > 0 && (int) ($r['dev_leader_id'] ?? 0) === $uid) {
-        return true;
-    }
-    if (in_array(QLY_ROLE_PM, $roles, true) && (string) ($r['status'] ?? '') === '需求池') {
+    $status = (string) ($r['status'] ?? '');
+    // 开发工程师可见需求池（认领开发入口）+ 开发中心（发布上线入口）
+    if (in_array(QLY_ROLE_DEV, $roles, true) && in_array($status, ['需求池', '开发中心'], true)) {
         return true;
     }
     // 已上线的成果对全员可见
-    if ((string) ($r['status'] ?? '') === '已上线') {
+    if ($status === '已上线') {
         return true;
     }
     return false;
@@ -372,18 +368,16 @@ function qly_devreq_scope_where(array $user, string $alias = 'i'): array
         return ['', []];
     }
     $uid = (int) ($user['id'] ?? 0);
-    $isPm = in_array(QLY_ROLE_PM, $roles, true);
+    $isDev = in_array(QLY_ROLE_DEV, $roles, true);
     // PDO 原生预处理（EMULATE_PREPARES=false）不允许同名占位符重复，每个条件独立编号
     $conds = [
         "{$alias}.submitter_id = :__dv_u1",
-        "{$alias}.pm_id = :__dv_u2",
-        "{$alias}.dev_leader_id = :__dv_u3",
     ];
-    if ($isPm) {
-        $conds[] = "{$alias}.status = '需求池'";
+    // 开发工程师可见需求池 + 开发中心；已上线的成果对全员可见
+    if ($isDev) {
+        $conds[] = "{$alias}.status IN ('需求池', '开发中心')";
     }
-    // 已上线的成果（已上线）对全员可见
     $conds[] = "{$alias}.status = '已上线'";
     $where = ' AND (' . implode(' OR ', $conds) . ')';
-    return [$where, [':__dv_u1' => $uid, ':__dv_u2' => $uid, ':__dv_u3' => $uid]];
+    return [$where, [':__dv_u1' => $uid]];
 }

@@ -3,10 +3,11 @@ declare(strict_types=1);
 
 /**
  * 需求管理模块：需求研发流接口。
- * 流程：需求提交 → 评审池（评审委员，驳回即作废）→ 需求池（产品经理认领）→
- *       设计中心（设计文档链接/分支/负责人）→ 开发中心（负责人发布上线）→ 已上线（终态）。
- * 可见范围：评审委员/管理员全量；产品经理可见需求池与自己认领的；
- *           开发负责人/提交人可见自己的。
+ * 流程：需求提交 → 评审池（评审委员，驳回即作废）→ 需求池（开发工程师点「开发」认领）→
+ *       开发中心（发布上线）→ 已上线（终态）。
+ * （原「设计中心」环节已移除：需求池不再经产品经理认领设计，而是由开发工程师“开发”直接进入开发中心；
+ *   开发中心也不再展示设计文档/设计人/负责人字段。）
+ * 可见范围：评审委员/管理员全量；开发工程师可见需求池（待开发）与开发中心；提交人可见自己的。
  * 方案见 docs/需求管理模块-需求方案.md。
  */
 
@@ -25,10 +26,10 @@ function qly_devreq_priorities(): array
 /** 主任务状态集合（与前端 DevStatus 常量保持一致） */
 function qly_devreq_statuses(): array
 {
-    return ['评审池', '需求池', '设计中心', '开发中心', '待发布', '已上线', '已驳回', '已取消'];
+    return ['评审池', '需求池', '开发中心', '待发布', '已上线', '已驳回', '已取消'];
 }
 
-/** 附件落库（scene：submit提交/design设计/reject驳回/done完成/release上线） */
+/** 附件落库（scene：submit提交/reject驳回/done完成/release上线） */
 function qly_devreq_save_attachments(int $requestId, string $scene, $attachments, int $uploaderId): int
 {
     $n = 0;
@@ -89,14 +90,6 @@ function qly_devreq_row_public(array $r): array
         'reviewComment' => $r['review_comment'],
         'reviewedAt' => $r['reviewed_at'],
         'reviewPending' => (int) ($r['review_pending'] ?? 0) === 1,
-        'pmId' => $r['pm_id'] !== null ? (int) $r['pm_id'] : null,
-        'pmName' => $r['pm_name'],
-        'designDoc' => $r['design_doc'],
-        'designUrl' => $r['design_url'] ?? null,
-        'branch' => $r['branch'],
-        'devLeaderId' => $r['dev_leader_id'] !== null ? (int) $r['dev_leader_id'] : null,
-        'devLeaderName' => $r['dev_leader_name'],
-        'designedAt' => $r['designed_at'],
         'devDoneNote' => $r['dev_done_note'] ?? null,
         'devDoneAt' => $r['dev_done_at'] ?? null,
         'releasedAt' => $r['released_at'],
@@ -155,17 +148,6 @@ function qly_devreq_filters(): array
     // 隐藏评审待定的需求（我的需求/评审池开关，默认开启）
     if ((string) qly_input('hidePending', '') === '1') {
         $where .= ' AND i.review_pending = 0';
-    }
-    // 开发中心列表筛选：设计人 / 负责人
-    $pmId = qly_input_int('pmId', 0);
-    if ($pmId > 0) {
-        $where .= ' AND i.pm_id = :pmf';
-        $params[':pmf'] = $pmId;
-    }
-    $devLeaderId = qly_input_int('devLeaderId', 0);
-    if ($devLeaderId > 0) {
-        $where .= ' AND i.dev_leader_id = :dlf';
-        $params[':dlf'] = $devLeaderId;
     }
     // 上线时间范围筛选（发布上线记录页）
     $releasedStart = (string) qly_input('releasedStart', '');
@@ -243,14 +225,14 @@ function qly_api_devreqs_detail(): void
     }
     $data = qly_devreq_row_public($row);
 
-    // 需求级附件（提交/设计/驳回/完成/上线）
+    // 需求级附件（提交/驳回/完成/上线）
     $data['attachments'] = qly_devreq_attachments_public(
         qly_all('SELECT * FROM `dev_request_attachment` WHERE request_id = :rid ORDER BY id ASC', [':rid' => $id])
     );
 
     // 时间线日志（该需求相关的全部需求流日志）
     $logs = [];
-    $types = ['提交需求', '需求评审', '需求设计', '需求开发', '需求发布'];
+    $types = ['提交需求', '需求评审', '需求开发', '需求发布'];
     $in = [];
     $params = [':t' => '%' . $row['req_no'] . '%'];
     foreach ($types as $k => $t) {
@@ -494,7 +476,7 @@ function qly_api_devreqs_review(): void
             'updated_at' => $now,
         ]);
         qly_log($user, '需求评审', (string) $row['req_no'], '评审通过：' . $row['title'] . ($comment !== '' ? '，意见：' . mb_substr($comment, 0, 80) : ''));
-        qly_notify([(int) $row['submitter_id']], '您的需求已评审通过', '需求 ' . $row['req_no'] . ' 已进入需求池，等待产品经理认领设计', '/dev/reqs/' . $id, (int) $user['id']);
+        qly_notify([(int) $row['submitter_id']], '您的需求已评审通过', '需求 ' . $row['req_no'] . ' 已进入需求池，等待开发工程师认领开发', '/dev/reqs/' . $id, (int) $user['id']);
         qly_notify(
             qly_notify_user_ids_by_roles([QLY_ROLE_PM]),
             '需求池有新任务',
@@ -579,12 +561,12 @@ function qly_api_devreqs_priority(): void
     qly_ok(['priority' => $priority], '优先级已调整');
 }
 
-/** 产品经理认领：需求池 → 设计中心 */
-function qly_api_devreqs_claim(): void
+/** 开发（认领开发）：需求池 → 开发中心（开发工程师 / 管理员点击「开发」直接进入开发中心） */
+function qly_api_devreqs_develop(): void
 {
     $user = qly_auth_user();
-    if (!qly_can_design_req($user)) {
-        qly_forbidden('仅产品经理或管理员可认领需求');
+    if (!qly_can_develop_req($user)) {
+        qly_forbidden('仅开发工程师或管理员可开发需求');
     }
     $id = qly_input_int('id', 0);
     $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
@@ -597,86 +579,22 @@ function qly_api_devreqs_claim(): void
     $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
     $now = date('Y-m-d H:i:s');
     qly_update('dev_request', $id, [
-        'status' => '设计中心',
-        'pm_id' => (int) $user['id'],
-        'pm_name' => $name,
-        'design_at' => $now,
-        'updated_at' => $now,
-    ]);
-    qly_log($user, '需求设计', (string) $row['req_no'], '产品经理认领，进入设计中心设计：' . $row['title']);
-    qly_notify([(int) $row['submitter_id']], '您的需求已进入设计阶段', '产品经理 ' . $name . ' 已认领需求 ' . $row['req_no'], '/dev/reqs/' . $id, (int) $user['id']);
-    qly_ok(null, '认领成功，已进入设计中心');
-}
-
-/** 设计中心完成设计：设计文档(网址) + 设计说明 + 开发分支 + 负责人 → 开发中心 */
-function qly_api_devreqs_design(): void
-{
-    $user = qly_auth_user();
-    if (!qly_can_design_req($user)) {
-        qly_forbidden('仅产品经理或管理员可提交设计');
-    }
-    $id = qly_input_int('id', 0);
-    $designUrl = trim((string) qly_input('designUrl', ''));
-    $designDoc = (string) qly_input('designDoc', '');
-    $branch = trim((string) qly_input('branch', ''));
-    $devLeaderId = qly_input_int('devLeaderId', 0);
-    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
-    if (!$row) {
-        qly_fail('需求不存在');
-    }
-    if ((string) $row['status'] !== '设计中心') {
-        qly_fail('该需求不在设计中心');
-    }
-    $isAdmin = qly_has_role($user, [QLY_ROLE_ADMIN]);
-    if (!$isAdmin && (int) ($row['pm_id'] ?? 0) !== (int) $user['id']) {
-        qly_forbidden('仅认领该需求的产品经理可提交设计');
-    }
-    if ($designUrl === '') {
-        qly_fail('请填写设计文档链接');
-    }
-    if (!preg_match('#^https?://[^\s]+$#i', $designUrl) || mb_strlen($designUrl) > 500) {
-        qly_fail('设计文档链接格式不正确（需 http/https 开头，500 字以内）');
-    }
-    if ($branch === '') {
-        qly_fail('请填写开发分支');
-    }
-    if (!preg_match('/^[A-Za-z0-9_\-\.\/]{1,100}$/', $branch)) {
-        qly_fail('开发分支格式不正确（仅限字母数字 _ - . /）');
-    }
-    if ($devLeaderId <= 0) {
-        qly_fail('请选择负责人');
-    }
-    $leader = qly_one('SELECT * FROM `user` WHERE id = :id AND status = 1', [':id' => $devLeaderId]);
-    if (!$leader) {
-        qly_fail('负责人不存在或已禁用');
-    }
-    if (!qly_has_role($leader, [QLY_ROLE_DEV, QLY_ROLE_ADMIN])) {
-        qly_fail('负责人必须拥有「开发工程师」或「管理员」角色');
-    }
-
-    $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
-    $leaderName = $leader['name'] !== '' ? (string) $leader['name'] : (string) $leader['account'];
-    $now = date('Y-m-d H:i:s');
-    qly_update('dev_request', $id, [
-        'design_url' => $designUrl,
-        'design_doc' => $designDoc,
-        'branch' => $branch,
-        'dev_leader_id' => $devLeaderId,
-        'dev_leader_name' => $leaderName,
-        'designed_at' => $now,
         'status' => '开发中心',
         'battle_at' => $now,
         'updated_at' => $now,
     ]);
-    qly_log($user, '需求设计', (string) $row['req_no'], '设计完成进入开发中心：' . $row['title'] . '，设计文档 ' . $designUrl . '，分支 ' . $branch . '，负责人 ' . $leaderName);
-    qly_notify([$devLeaderId], '新的开发任务', '【' . $row['title'] . '】分支 ' . $branch . '，请在开发中心完成开发后发布上线', '/dev/reqs/' . $id, (int) $user['id']);
-    qly_ok(null, '设计已提交，任务进入开发中心');
+    qly_log($user, '需求开发', (string) $row['req_no'], '开发工程师认领开发，进入开发中心：' . $row['title']);
+    qly_notify([(int) $row['submitter_id']], '您的需求已进入开发', '开发工程师 ' . $name . ' 已认领需求 ' . $row['req_no'] . '，正在开发中', '/dev/reqs/' . $id, (int) $user['id']);
+    qly_ok(null, '开发任务已创建，需求进入开发中心');
 }
 
-/** 开发中心发布上线（负责人或管理员，支持批量）→ 直接上线（记录上线时间与操作人） */
+/** 开发中心发布上线（开发工程师或管理员，支持批量）→ 直接上线（记录上线时间与操作人） */
 function qly_api_devreqs_battle_publish(): void
 {
     $user = qly_auth_user();
+    if (!qly_has_role($user, [QLY_ROLE_DEV, QLY_ROLE_ADMIN])) {
+        qly_forbidden('仅开发工程师或管理员可发布上线');
+    }
     $ids = qly_input('ids');
     if (is_array($ids) && $ids) {
         $targets = array_values(array_unique(array_map('intval', $ids)));
@@ -688,7 +606,6 @@ function qly_api_devreqs_battle_publish(): void
     if (!$targets) {
         qly_fail('请选择要发布的需求');
     }
-    $isAdmin = qly_has_role($user, [QLY_ROLE_ADMIN]);
     $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
     $now = date('Y-m-d H:i:s');
     $okCount = 0;
@@ -703,88 +620,37 @@ function qly_api_devreqs_battle_publish(): void
             $skipCount++;
             continue;
         }
-        if (!$isAdmin && (int) ($row['dev_leader_id'] ?? 0) !== (int) $user['id']) {
-            $skipCount++;
-            continue;
-        }
         qly_update('dev_request', $tid, [
             'status' => '已上线',
             'released_at' => $now,
             'released_by' => $name,
             'updated_at' => $now,
         ]);
-        qly_log($user, '需求发布', (string) $row['req_no'], '发布上线：' . $row['title'] . '（负责人直接发布）');
+        qly_log($user, '需求发布', (string) $row['req_no'], '发布上线：' . $row['title'] . '（开发工程师发布）');
         $watchIds = array_values(array_unique(array_filter([
             (int) $row['submitter_id'],
-            (int) ($row['pm_id'] ?? 0),
-            (int) ($row['dev_leader_id'] ?? 0),
         ])));
         qly_notify($watchIds, '您的需求已上线', '【' . $row['title'] . '】已正式发布上线', '/dev/reqs/' . $tid, (int) $user['id']);
         $okCount++;
     }
     if ($okCount === 0) {
-        qly_fail('没有可发布的需求（需处于开发中心且由您负责，或为管理员）');
+        qly_fail('没有可发布的需求（需处于开发中心）');
     }
-    $msg = '已上线 ' . $okCount . ' 条' . ($skipCount > 0 ? '，另有 ' . $skipCount . ' 条已跳过（状态不符或无权限）' : '');
+    $msg = '已上线 ' . $okCount . ' 条' . ($skipCount > 0 ? '，另有 ' . $skipCount . ' 条已跳过（状态不符）' : '');
     qly_ok(['affected' => $okCount, 'skipped' => $skipCount], $msg);
 }
 
-/** 负责人候选（开发工程师 / 管理员，设计中心指定负责人用） */
-function qly_api_devreqs_devs(): void
-{
-    qly_auth_user();
-    $rows = qly_all(
-        "SELECT u.id, u.account, u.name, u.roles, d.name AS department_name
-           FROM `user` u LEFT JOIN `department` d ON d.id = u.department_id
-          WHERE u.status = 1 AND u.deleted_at IS NULL"
-    );
-    $items = [];
-    foreach ($rows as $r) {
-        if (qly_has_role($r, [QLY_ROLE_DEV, QLY_ROLE_ADMIN])) {
-            $items[] = [
-                'id' => (int) $r['id'],
-                'account' => $r['account'],
-                'name' => $r['name'] !== '' ? (string) $r['name'] : (string) $r['account'],
-                'departmentName' => $r['department_name'] ?? null,
-            ];
-        }
-    }
-    usort($items, fn(array $a, array $b): int => strcmp($a['name'], $b['name']));
-    qly_ok($items);
-}
-
-/** 设计人候选（产品经理 / 管理员，开发中心「设计人」筛选用） */
-function qly_api_devreqs_pms(): void
-{
-    qly_auth_user();
-    $rows = qly_all(
-        "SELECT u.id, u.account, u.name, u.roles, d.name AS department_name
-           FROM `user` u LEFT JOIN `department` d ON d.id = u.department_id
-          WHERE u.status = 1 AND u.deleted_at IS NULL"
-    );
-    $items = [];
-    foreach ($rows as $r) {
-        if (qly_has_role($r, [QLY_ROLE_PM, QLY_ROLE_ADMIN])) {
-            $items[] = [
-                'id' => (int) $r['id'],
-                'account' => $r['account'],
-                'name' => $r['name'] !== '' ? (string) $r['name'] : (string) $r['account'],
-                'departmentName' => $r['department_name'] ?? null,
-            ];
-        }
-    }
-    usort($items, fn(array $a, array $b): int => strcmp($a['name'], $b['name']));
-    qly_ok($items);
-}
-
 /**
- * 同步任务到 PingCode（开发中心操作；负责人/管理员，支持批量）。
+ * 同步任务到 PingCode（开发中心操作；开发工程师/管理员，支持批量）。
  * 在 PingCode「快工单」项目创建「史诗」类型工作项：标题=需求标题，描述=需求描述+元信息；
  * 成功后记录任务 ID/编号/链接，重复同步自动跳过（已同步的需求不重复创建）。
  */
 function qly_api_devreqs_sync_task(): void
 {
     $user = qly_auth_user();
+    if (!qly_has_role($user, [QLY_ROLE_DEV, QLY_ROLE_ADMIN])) {
+        qly_forbidden('仅开发工程师或管理员可同步任务');
+    }
     require_once __DIR__ . '/../inc/pingcode.php';
 
     if (!qly_pingcode_configured()) {
@@ -800,7 +666,6 @@ function qly_api_devreqs_sync_task(): void
     if (!$targets) {
         qly_fail('请选择要同步的需求');
     }
-    $isAdmin = qly_has_role($user, [QLY_ROLE_ADMIN]);
     // 项目引用：支持填项目 ID 或项目名称（如「快工单」），自动解析为 ID
     $projectRef = qly_pingcode_env('PINGCODE_PROJECT_ID');
     try {
@@ -829,34 +694,18 @@ function qly_api_devreqs_sync_task(): void
             $skipCount++;
             continue;
         }
-        if (!$isAdmin && (int) ($row['dev_leader_id'] ?? 0) !== (int) $user['id']) {
-            $skipCount++;
-            continue;
-        }
         if ((string) ($row['pingcode_task_id'] ?? '') !== '') {
             // 已同步过：不重复创建
             $skipCount++;
             continue;
         }
-        // 描述：需求描述 + 来源信息（编号/模块/设计文档/分支），便于 PingCode 侧追溯
+        // 描述：需求描述 + 来源信息（编号/模块），便于 PingCode 侧追溯
         $lines = [(string) $row['description']];
         $lines[] = '';
         $lines[] = '—— 由软件开发管理平台同步 ——';
         $lines[] = '需求编号：' . (string) $row['req_no'];
         if ((string) ($row['module_name'] ?? '') !== '') {
             $lines[] = '所属模块：' . (string) $row['module_name'];
-        }
-        if ((string) ($row['design_url'] ?? '') !== '') {
-            $lines[] = '设计文档：' . (string) $row['design_url'];
-        }
-        if ((string) ($row['branch'] ?? '') !== '') {
-            $lines[] = '开发分支：' . (string) $row['branch'];
-        }
-        if ((string) ($row['pm_name'] ?? '') !== '') {
-            $lines[] = '设计人：' . (string) $row['pm_name'];
-        }
-        if ((string) ($row['dev_leader_name'] ?? '') !== '') {
-            $lines[] = '负责人：' . (string) $row['dev_leader_name'];
         }
         try {
             [$taskId, $taskNo, $taskUrl] = qly_pingcode_create_task(
@@ -870,16 +719,6 @@ function qly_api_devreqs_sync_task(): void
             $skipCount++;
             continue;
         }
-        // 开发分支作为标签挂到工作项（不存在则自动创建标签）；失败不阻断同步，仅记录告警
-        $branch = trim((string) ($row['branch'] ?? ''));
-        if ($branch !== '') {
-            try {
-                $tagId = qly_pingcode_ensure_tag($branch, $projectId);
-                qly_pingcode_attach_tag($taskId, $tagId);
-            } catch (Throwable $e) {
-                $errors[] = (string) $row['req_no'] . '：分支标签同步失败（' . $e->getMessage() . '）';
-            }
-        }
         qly_update('dev_request', $tid, [
             'pingcode_task_id' => $taskId,
             'pingcode_task_no' => $taskNo !== '' ? $taskNo : null,
@@ -887,7 +726,7 @@ function qly_api_devreqs_sync_task(): void
             'pingcode_synced_at' => $now,
             'updated_at' => $now,
         ]);
-        qly_log($user, '需求开发', (string) $row['req_no'], '同步到 PingCode：' . $row['title'] . ($taskNo !== '' ? '（' . $taskNo . '）' : '') . ($branch !== '' ? '，分支标签 ' . $branch : ''));
+        qly_log($user, '需求开发', (string) $row['req_no'], '同步到 PingCode：' . $row['title'] . ($taskNo !== '' ? '（' . $taskNo . '）' : ''));
         $okCount++;
     }
     if ($okCount === 0) {

@@ -13,17 +13,17 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import * as XLSX from 'xlsx'
 import { useDictStore } from '@/stores/dict'
 import { useAuthStore } from '@/stores/auth'
-import { battlePublishDevRequest, fetchDevCandidates, fetchDevRequests, fetchPmCandidates, setDevRequestPriority, syncTaskDevRequest } from '@/api/devreq'
+import { battlePublishDevRequest, developDevRequest, fetchDevRequests, setDevRequestPriority, syncTaskDevRequest } from '@/api/devreq'
 import { exportReleasedLog } from '@/api/log'
 import { DEV_PRIORITY_CLASS, DEV_PRIORITY_OPTIONS, DEV_STATUS_CLASS, DEV_STATUS_OPTIONS } from '@/constants/devreq'
-import { canDesignReq, canReviewReq, isAdmin } from '@/constants/user'
+import { canDevReq, canReviewReq, isAdmin, ROLE_PM } from '@/constants/user'
 import DevRequestActions from '@/components/DevRequestActions.vue'
 import EmptyIllustration from '@/components/illustrations/EmptyIllustration.vue'
 import ColumnConfig from '@/components/ColumnConfig.vue'
 import { fileStamp, fmtDateTime } from '@/utils/format'
 import { useColumnWidths } from '@/composables/useColumnWidths'
 import { useColumnConfig } from '@/composables/useColumnConfig'
-import type { DevCandidate, DevPriority, DevQuery, DevRequest, DevStatus } from '@/types'
+import type { DevPriority, DevQuery, DevRequest, DevStatus } from '@/types'
 
 const props = defineProps<{ stage?: DevStatus; mine?: boolean; released?: boolean }>()
 
@@ -52,7 +52,7 @@ function onAdminViewChange(): void {
 
 /**
  * 本列表页的存储标识（列宽记忆 / 列配置共用）。
- * 本组件被 5 个环节页复用（我的需求/评审池/需求池/设计中心/开发中心）：
+ * 本组件被 4 个环节页复用（我的需求/评审池/需求池/开发中心）：
  * 路由侧已给各页独立的组件实例（router-view 按 route.name 加 key），
  * 这里只需在实例创建时按当前页取一个固定标识，页与页之间互不影响。
  */
@@ -64,8 +64,6 @@ const tableId = (() => {
       return 'dev-review'
     case '需求池':
       return 'dev-pool'
-    case '设计中心':
-      return 'dev-design'
     case '开发中心':
       return 'dev-battle'
     default:
@@ -95,9 +93,6 @@ interface DevColDef {
 const DEV_COL_DEFS: Record<string, DevColDef> = {
   reqNo: { label: '需求编号', width: 200 },
   title: { label: '需求标题', minWidth: 180 },
-  designUrl: { label: '设计文档', width: 110 },
-  pmName: { label: '设计人', width: 100 },
-  devLeaderName: { label: '负责人', width: 100 },
   pingcodeTask: { label: 'PingCode', width: 110 },
   moduleName: { label: '模块', width: 80 },
   priority: { label: '优先级', width: 78, align: 'center', sortable: true },
@@ -118,19 +113,23 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = ref(10)
 const showStatusColumn = computed(() => !props.stage)
-/** 开发中心页：展示设计文档/设计人/负责人三列（其余页面不展示） */
+/** 开发中心页：展示 PingCode 列与批量发布（其余页面不展示） */
 const isBattleStage = computed(() => props.stage === '开发中心')
+/** 需求池页：展示批量「开发」操作（开发工程师/管理员） */
+const isPoolStage = computed(() => props.stage === '需求池')
+/** 批量勾选适用于需求池/开发中心，且需具备开发权限（开发工程师/管理员） */
+const canBatchDevelop = computed(() => canDevReq(auth.roles))
+/** 选择列可选状态：需求池页=需求池，开发中心页=开发中心 */
+function isSelectable(r: DevRequest): boolean {
+  return isPoolStage.value ? r.status === '需求池' : r.status === '开发中心'
+}
 /** 发布上线记录页：展示上线时间列 + 时间筛选，不展示操作列 */
 const isReleasedStage = computed(() => props.released === true)
 
 /**
  * 按「列配置」的顺序与显隐生成实际渲染的列。
  * 条件列：状态列只在「我的需求」等未按环节过滤的页面展示；
- * 设计文档/设计人列在「开发中心」（配合筛选）与「发布上线」记录页展示；
- * 负责人列仅在「开发中心」展示；PingCode 列在「开发中心」与「发布上线」展示；
- * 上线时间列仅在「发布上线」记录页展示。
- * （「处理人」列已整体移除：各环节显示的多为与状态重复的信息，
- *   设计/开发负责人由开发中心的设计人、负责人列承载，明细看详情页。）
+ * PingCode 列在「开发中心」与「发布上线」展示；上线时间列仅在「发布上线」记录页展示。
  */
 const devColumns = computed(() =>
   colcfg
@@ -140,15 +139,6 @@ const devColumns = computed(() =>
         return false
       }
       if (c.key === 'status' && !showStatusColumn.value) {
-        return false
-      }
-      if (c.key === 'designUrl' && !isBattleStage.value && !isReleasedStage.value) {
-        return false
-      }
-      if (c.key === 'pmName' && !isBattleStage.value && !isReleasedStage.value) {
-        return false
-      }
-      if (c.key === 'devLeaderName' && !isBattleStage.value) {
         return false
       }
       // PingCode 同步列：开发中心 + 发布上线记录页展示
@@ -177,11 +167,9 @@ const stageDesc = computed(() => {
     case '评审池':
       return '所有新需求在此等待评审：通过即进入需求池，待定暂留本池（可再改判），驳回则需求作废。'
     case '需求池':
-      return '评审通过的需求在此集结（按优先级排序），产品经理从中挑选任务认领设计。'
-    case '设计中心':
-      return '产品经理填写设计文档链接、指定开发分支与负责人。'
+      return '评审通过的需求在此集结（按优先级排序），开发工程师从中挑选任务点「开发」进入开发中心。'
     case '开发中心':
-      return '负责人按分支完成开发后点「发布上线」立即上线（负责人或管理员，可批量）。'
+      return '开发工程师完成开发后点「发布上线」立即上线（开发工程师或管理员，可批量）。'
     case '已上线':
       return props.released
         ? '已上线需求记录（按上线时间倒序）：支持按上线时间筛选。'
@@ -196,27 +184,44 @@ const filters = reactive({
   priority: '' as DevPriority | '',
   status: '' as DevStatus | '',
   moduleId: undefined as number | undefined,
-  pmId: undefined as number | undefined,
-  devLeaderId: undefined as number | undefined,
   /** 上线时间范围（发布上线记录页） */
   releasedStart: '',
   releasedEnd: '',
 })
 
-/** 开发中心筛选候选：设计人（产品经理/管理员）与负责人（开发工程师/管理员） */
-const pmOptions = ref<DevCandidate[]>([])
-const leaderOptions = ref<DevCandidate[]>([])
-async function loadCandidates(): Promise<void> {
-  if (!isBattleStage.value) {
+/** 需求池可批量「开发」的勾选行 */
+const developableSelected = computed(() => selectedRows.value.filter((r) => r.status === '需求池'))
+
+/** 批量开发（需求池）：勾选后逐条「开发」（进入开发中心，开发工程师/管理员） */
+const batchDevelopBusy = ref(false)
+async function onBatchDevelop(): Promise<void> {
+  const ids = developableSelected.value.map((r) => r.id)
+  if (!ids.length) {
+    ElMessage.warning('请先勾选要开发的需求（仅需求池状态）')
     return
   }
+  await ElMessageBox.confirm(
+    `确定将勾选的 ${ids.length} 条需求进入开发吗？确认后它们将进入开发中心。`,
+    '批量开发',
+    { confirmButtonText: '确定开发', cancelButtonText: '取消', type: 'info' },
+  )
+  batchDevelopBusy.value = true
   try {
-    const [pms, leaders] = await Promise.all([fetchPmCandidates(), fetchDevCandidates()])
-    pmOptions.value = pms
-    leaderOptions.value = leaders
-  } catch {
-    pmOptions.value = []
-    leaderOptions.value = []
+    let ok = 0
+    let fail = 0
+    for (const id of ids) {
+      try {
+        await developDevRequest(id)
+        ok += 1
+      } catch {
+        fail += 1
+      }
+    }
+    ElMessage.success(`已进入开发中心 ${ok} 条${fail > 0 ? `，${fail} 条失败` : ''}`)
+    selectedRows.value = []
+    await load()
+  } finally {
+    batchDevelopBusy.value = false
   }
 }
 
@@ -303,8 +308,6 @@ const activeFilterCount = computed(() => {
   if (filters.priority) n += 1
   if (filters.status) n += 1
   if (filters.moduleId) n += 1
-  if (filters.pmId) n += 1
-  if (filters.devLeaderId) n += 1
   if (filters.releasedStart || filters.releasedEnd) n += 1
   if (filters.keyword) n += 1
   return n
@@ -325,8 +328,6 @@ function buildQuery(): DevQuery {
     keyword: filters.keyword.trim() || undefined,
     priority: filters.priority || undefined,
     moduleId: filters.moduleId,
-    pmId: isBattleStage.value ? filters.pmId : undefined,
-    devLeaderId: isBattleStage.value ? filters.devLeaderId : undefined,
     releasedStart: isReleasedStage.value ? filters.releasedStart || undefined : undefined,
     releasedEnd: isReleasedStage.value ? filters.releasedEnd || undefined : undefined,
     sortField: sortField.value,
@@ -377,9 +378,6 @@ async function onExport(): Promise<void> {
     const rows = all.map((r) => ({
       需求编号: r.reqNo,
       需求标题: r.title,
-      设计文档: r.designUrl || '—',
-      设计人: r.pmName || '—',
-      负责人: r.devLeaderName || '—',
       模块: r.moduleName || '—',
       优先级: r.priority,
       提交人: r.submitterName,
@@ -394,8 +392,8 @@ async function onExport(): Promise<void> {
     }
     const sheet = XLSX.utils.json_to_sheet(rows)
     sheet['!cols'] = [
-      { wch: 20 }, { wch: 28 }, { wch: 42 }, { wch: 10 }, { wch: 10 }, { wch: 10 },
-      { wch: 8 }, { wch: 10 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 10 },
+      { wch: 20 }, { wch: 28 }, { wch: 10 }, { wch: 8 }, { wch: 10 }, { wch: 14 },
+      { wch: 18 }, { wch: 18 }, { wch: 10 },
     ]
     const book = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(book, sheet, '发布上线记录')
@@ -419,8 +417,6 @@ function onReset(): void {
   filters.priority = ''
   filters.status = ''
   filters.moduleId = undefined
-  filters.pmId = undefined
-  filters.devLeaderId = undefined
   filters.releasedStart = ''
   filters.releasedEnd = ''
   page.value = 1
@@ -458,10 +454,8 @@ function goDetail(row: DevRequest): void {
 }
 
 /* —— 优先级行内调整（评审委员 / 产品经理 / 管理员；任意环节可调） —— */
-/** 是否可调整优先级：与后端 devreqs/priority 接口权限保持一致 */
-const canEditPriority = computed(
-  () => canReviewReq(auth.roles) || canDesignReq(auth.roles) || isAdmin(auth.roles),
-)
+/** 是否可调整优先级：与后端 devreqs/priority 接口权限保持一致（评审委员/产品经理/管理员） */
+const canEditPriority = computed(() => canReviewReq(auth.roles) || auth.hasRole([ROLE_PM]))
 const prioritySavingId = ref(0)
 
 /** 优先级修改命令（下拉选中）；失败时提示并保持原值（load 重新拉取兜底） */
@@ -488,9 +482,6 @@ function registerColumns(): void {
   colcfg.register([
     { key: 'reqNo', label: '需求编号' },
     { key: 'title', label: '需求标题' },
-    { key: 'designUrl', label: '设计文档' },
-    { key: 'pmName', label: '设计人' },
-    { key: 'devLeaderName', label: '负责人' },
     { key: 'pingcodeTask', label: 'PingCode' },
     { key: 'moduleName', label: '模块' },
     { key: 'priority', label: '优先级' },
@@ -506,7 +497,6 @@ function registerColumns(): void {
 onMounted(() => {
   registerColumns()
   void dict.load()
-  void loadCandidates()
   void load()
 })
 
@@ -555,19 +545,7 @@ watch(
             <el-option v-for="it in dict.allOf('module')" :key="it.id" :label="it.name" :value="it.id" />
           </el-select>
         </div>
-        <!-- 开发中心：按设计人 / 负责人筛选 -->
-        <div v-if="isBattleStage" class="filter-inline__item">
-          <span class="filter-inline__label">设计人</span>
-          <el-select v-model="filters.pmId" placeholder="全部设计人" clearable filterable style="width: 148px" @change="load">
-            <el-option v-for="p in pmOptions" :key="p.id" :label="`${p.name}（${p.departmentName || p.account}）`" :value="p.id" />
-          </el-select>
-        </div>
-        <div v-if="isBattleStage" class="filter-inline__item">
-          <span class="filter-inline__label">负责人</span>
-          <el-select v-model="filters.devLeaderId" placeholder="全部负责人" clearable filterable style="width: 148px" @change="load">
-            <el-option v-for="d in leaderOptions" :key="d.id" :label="`${d.name}（${d.departmentName || d.account}）`" :value="d.id" />
-          </el-select>
-        </div>
+        <!-- 开发中心 / 需求池等：按状态筛选 -->
         <div v-if="showStatusColumn" class="filter-inline__item">
           <span class="filter-inline__label">状态</span>
           <el-select v-model="filters.status" placeholder="全部状态" clearable style="width: 132px" @change="load">
@@ -638,6 +616,14 @@ watch(
             :width="36"
             @change="onToggleHidePending"
           />
+          <!-- 需求池：批量开发（开发工程师/管理员，进入开发中心） -->
+          <el-button
+            v-if="isPoolStage && canBatchDevelop"
+            type="primary"
+            :disabled="!developableSelected.length"
+            :loading="batchDevelopBusy"
+            @click="onBatchDevelop"
+          >批量开发{{ developableSelected.length ? `（${developableSelected.length}）` : '' }}</el-button>
           <!-- 开发中心：批量同步任务到 PingCode -->
           <el-button
             v-if="isBattleStage"
@@ -676,7 +662,7 @@ watch(
           @sort-change="onSortChange"
           @selection-change="onSelectionChange"
         >
-          <el-table-column v-if="isBattleStage" type="selection" width="40" :selectable="(r: DevRequest) => r.status === '开发中心'" />
+          <el-table-column v-if="isPoolStage || isBattleStage" type="selection" width="40" :selectable="isSelectable" />
 
           <template #empty>
             <EmptyIllustration :size="130" text="暂无需求数据" sub-text="可以调整筛选条件，或先去提交一条需求" />
@@ -723,29 +709,6 @@ watch(
 
               <template v-else-if="c.key === 'moduleName'">
                 <span class="cell-nowrap">{{ row.moduleName || '—' }}</span>
-              </template>
-
-              <!-- 设计文档（链接，新窗口打开）/ 设计人：开发中心与发布上线记录页展示；负责人：仅开发中心 -->
-              <template v-else-if="c.key === 'designUrl'">
-                <a
-                  v-if="row.designUrl"
-                  class="cell-code cell-code--link cell-nowrap"
-                  :href="row.designUrl"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="打开设计文档"
-                >设计文档</a>
-                <span v-else class="text-placeholder">—</span>
-              </template>
-
-              <template v-else-if="c.key === 'pmName'">
-                <span v-if="row.pmName" class="cell-nowrap">{{ row.pmName }}</span>
-                <span v-else class="text-placeholder">—</span>
-              </template>
-
-              <template v-else-if="c.key === 'devLeaderName'">
-                <span v-if="row.devLeaderName" class="cell-nowrap">{{ row.devLeaderName }}</span>
-                <span v-else class="text-placeholder">—</span>
               </template>
 
               <!-- PingCode 同步状态（开发中心/发布上线展示：已同步显示工作项编号链接，未同步显示「未同步」） -->

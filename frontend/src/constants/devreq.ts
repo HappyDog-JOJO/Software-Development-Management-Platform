@@ -2,14 +2,13 @@
 
 import type { DevPriority, DevStatus } from '@/types'
 
-/** 主流程五站（时间线顺序；已驳回/已取消为分支终态） */
-export const DEV_STAGES: DevStatus[] = ['评审池', '需求池', '设计中心', '开发中心', '已上线']
+/** 主流程四站（时间线顺序；已驳回/已取消为分支终态） */
+export const DEV_STAGES: DevStatus[] = ['评审池', '需求池', '开发中心', '已上线']
 
 /** 全部状态（列表筛选用；「待发布」仅历史数据保留，不再作为筛选入口） */
 export const DEV_STATUS_OPTIONS: DevStatus[] = [
   '评审池',
   '需求池',
-  '设计中心',
   '开发中心',
   '已上线',
   '已驳回',
@@ -20,7 +19,6 @@ export const DEV_STATUS_OPTIONS: DevStatus[] = [
 export const DEV_STATUS_CLASS: Record<DevStatus, string> = {
   评审池: 'pill pill--yellow',
   需求池: 'pill pill--primary',
-  设计中心: 'pill pill--primary',
   开发中心: 'pill pill--pink',
   待发布: 'pill pill--primary',
   已上线: 'pill pill--green',
@@ -35,7 +33,6 @@ export type DevTagType = 'primary' | 'success' | 'warning' | 'danger' | 'info' |
 export const DEV_STATUS_TAG: Record<DevStatus, DevTagType> = {
   评审池: 'warning',
   需求池: 'primary',
-  设计中心: 'primary',
   开发中心: 'danger',
   待发布: 'primary',
   已上线: 'success',
