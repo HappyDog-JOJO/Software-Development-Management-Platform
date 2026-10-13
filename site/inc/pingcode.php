@@ -326,6 +326,40 @@ function qly_pingcode_task_options(string $projectId, string $typeId): array
 }
 
 /**
+ * 按关键词搜索 PingCode 标签库（供同步弹窗远程搜索用）。
+ * 说明：标签库是项目全局的（当前企业约 600+ 个），不宜一次性全量拉取；
+ *       接口的 name 参数为前缀/包含匹配，传空串则返回最新一页，故这里空关键词时返回空。
+ * 返回 [['id'=>, 'name'=>], ...]。
+ */
+function qly_pingcode_search_tags(string $keyword, string $projectId): array
+{
+    $keyword = trim($keyword);
+    if ($keyword === '') {
+        return [];
+    }
+    $data = qly_pingcode_api('GET', '/v1/pjm/workitem/tags', null, [
+        'project_id' => $projectId,
+        'name' => $keyword,
+        'page_size' => 100,
+    ]);
+    $items = $data['values'] ?? $data['value'] ?? [];
+    $out = [];
+    if (is_array($items)) {
+        foreach ($items as $it) {
+            if (!is_array($it)) {
+                continue;
+            }
+            $name = (string) ($it['name'] ?? '');
+            $id = (string) ($it['id'] ?? $it['_id'] ?? '');
+            if ($name !== '' && $id !== '') {
+                $out[] = ['id' => $id, 'name' => $name];
+            }
+        }
+    }
+    return $out;
+}
+
+/**
  * 在 PingCode 创建工作项（史诗）；返回 [id, identifier(如 KBC-123，可空), htmlUrl(可空)]
  * $extra 支持透传更多字段：description/priority_id/assignee_id/state_id/start_at/end_at。
  * 说明：start_at/end_at 需传 Unix 时间戳（秒，数字）；html_url 字段在 Open API 响应中可能为 url/html_url；

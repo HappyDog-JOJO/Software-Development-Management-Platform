@@ -10,6 +10,7 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
   fetchPingcodeOptions,
+  searchPingcodeTags,
   syncTaskDevRequest,
   type PingcodeOption,
   type PingcodeSyncFields,
@@ -52,8 +53,33 @@ const form = ref<PingcodeSyncFields>({
   dueAt: '',
   tags: [],
 })
-/** 标签用自由输入（allow-create），这里存字符串数组 */
+/** 标签用自由输入（allow-create），这里存字符串数组；选项按关键词远程搜索 */
 const tagList = ref<string[]>([])
+/** 标签远程搜索结果 */
+const tagOptions = ref<PingcodeOption[]>([])
+const tagSearching = ref(false)
+let tagSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+/** 远程搜索标签（防抖 300ms；空关键词清空结果，由后端按名建标签） */
+function remoteSearchTags(query: string): void {
+  const q = (query ?? '').trim()
+  if (tagSearchTimer) clearTimeout(tagSearchTimer)
+  if (!q) {
+    tagOptions.value = []
+    tagSearching.value = false
+    return
+  }
+  tagSearching.value = true
+  tagSearchTimer = setTimeout(async () => {
+    try {
+      tagOptions.value = await searchPingcodeTags(q)
+    } catch {
+      tagOptions.value = []
+    } finally {
+      tagSearching.value = false
+    }
+  }, 300)
+}
 
 /** 需求优先级 → PingCode 优先级名称 */
 const PRIORITY_MAP: Record<string, string> = {
@@ -74,6 +100,7 @@ function resetDefaults(): void {
     dueAt: '',
   }
   tagList.value = []
+  tagOptions.value = []
   // 默认优先级按需求优先级映射
   const want = props.defaultPriority ? PRIORITY_MAP[props.defaultPriority] ?? '' : ''
   if (want) {
@@ -214,12 +241,16 @@ async function onSubmit(): Promise<void> {
           filterable
           allow-create
           default-first-option
+          remote
+          :remote-method="remoteSearchTags"
+          :loading="tagSearching"
           :reserve-keyword="false"
-          placeholder="输入后回车添加标签（可留空）"
+          placeholder="输入关键词搜索标签，查不到可回车新建（可留空）"
           style="width: 100%"
         >
-          <el-option v-for="t in tagList" :key="t" :label="t" :value="t" />
+          <el-option v-for="t in tagOptions" :key="t.id" :label="t.name" :value="t.name" />
         </el-select>
+        <div class="pcsd-tag-tip">已选标签会挂到工作项；不存在的名称会在 PingCode 自动新建。</div>
       </el-form-item>
     </el-form>
     <template #footer>
@@ -228,3 +259,12 @@ async function onSubmit(): Promise<void> {
     </template>
   </el-dialog>
 </template>
+
+<style scoped>
+.pcsd-tag-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}
+</style>

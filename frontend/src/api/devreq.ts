@@ -105,6 +105,11 @@ export function fetchPingcodeOptions(): Promise<PingcodeOptions> {
   return http.get<PingcodeOptions>('/api.php?r=devreqs/pingcode-options')
 }
 
+/** 搜索 PingCode 标签库（远程搜索，带 id 采用现有标签；查不到由后端按名建标签） */
+export function searchPingcodeTags(keyword: string): Promise<PingcodeOption[]> {
+  return http.get<PingcodeOption[]>('/api.php?r=devreqs/pingcode-tags', { keyword }, true)
+}
+
 /** 同步任务到 PingCode（开发工程师/管理员，支持批量；已同步的自动跳过）；可带弹窗字段 */
 export function syncTaskDevRequest(
   ids: number[],

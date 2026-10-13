@@ -113,6 +113,7 @@ $routes = [
     'devreqs/battle-publish' => [['POST'], 'devreqs.php', 'qly_api_devreqs_battle_publish'],
     'devreqs/sync-task' => [['POST'], 'devreqs.php', 'qly_api_devreqs_sync_task'],
     'devreqs/pingcode-options' => [['GET'], 'devreqs.php', 'qly_api_devreqs_pingcode_options'],
+    'devreqs/pingcode-tags' => [['GET'], 'devreqs.php', 'qly_api_devreqs_pingcode_tags'],
 ];
 
 if (!isset($routes[$route])) {

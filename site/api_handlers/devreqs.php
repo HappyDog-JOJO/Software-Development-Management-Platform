@@ -678,6 +678,35 @@ function qly_api_devreqs_pingcode_options(): void
 }
 
 /**
+ * 搜索 PingCode 标签库（同步弹窗「标签」远程搜索用；开发工程师/管理员）。
+ * GET 参数：keyword（必填，空则返回空数组，避免拉全量）
+ * 返回：[['id'=>, 'name'=>], ...]
+ */
+function qly_api_devreqs_pingcode_tags(): void
+{
+    $user = qly_auth_user();
+    if (!qly_has_role($user, [QLY_ROLE_DEV, QLY_ROLE_ADMIN])) {
+        qly_forbidden('仅开发工程师或管理员可搜索标签');
+    }
+    require_once __DIR__ . '/../inc/pingcode.php';
+    if (!qly_pingcode_configured()) {
+        qly_fail('PingCode 未配置：请在 .env 中补充 PINGCODE_CLIENT_ID / PINGCODE_CLIENT_SECRET / PINGCODE_PROJECT_ID');
+    }
+    $keyword = (string) ($_GET['keyword'] ?? $_GET['name'] ?? '');
+    $projectRef = qly_pingcode_env('PINGCODE_PROJECT_ID');
+    try {
+        $projectId = qly_pingcode_resolve_project($projectRef);
+        if ($projectId === '') {
+            qly_fail('未找到 PingCode 项目「' . $projectRef . '」，请检查 PINGCODE_PROJECT_ID 配置');
+        }
+        $tags = qly_pingcode_search_tags($keyword, $projectId);
+    } catch (Throwable $e) {
+        qly_fail('搜索 PingCode 标签失败：' . $e->getMessage());
+    }
+    qly_ok($tags);
+}
+
+/**
  * 同步任务到 PingCode（开发中心操作；开发工程师/管理员，支持批量）。
  * 在 PingCode「快工单」项目创建「史诗」类型工作项。支持弹窗传入的关键字段：
  * - 单条：fields.title / fields.description（可改），其余同批量
