@@ -279,8 +279,12 @@ async function onRejectSubmit(): Promise<void> {
 async function onWithdraw(): Promise<void> {
   const target = withdrawTarget.value
   if (!target) return
+  // 已同步到 PingCode：撤回会一并删除对应工作项（不可恢复），文案需明示
+  const pcHint = props.req.pingcodeTaskId
+    ? `该需求已同步到 PingCode（${props.req.pingcodeTaskNo || '工作项'}），撤回会一并删除该 PingCode 工作项（不可恢复）。`
+    : ''
   await ElMessageBox.confirm(
-    `确定将需求「${props.req.title}」的处理进度撤回到「${target}」吗？撤回后相关登记会同步回退，并通知提交人与开发工程师。`,
+    `确定将需求「${props.req.title}」的处理进度撤回到「${target}」吗？撤回后相关登记会同步回退，并通知提交人与开发工程师。${pcHint}`,
     '撤回需求',
     { confirmButtonText: '确定撤回', cancelButtonText: '取消', type: 'warning' },
   )

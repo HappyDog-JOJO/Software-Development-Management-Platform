@@ -655,6 +655,8 @@ function qly_api_devreqs_battle_publish(): void
  * 流转规则：需求池 → 评审池；开发中心 → 需求池；已上线 → 开发中心。
  * 回退时清理该环节产生的登记（评审结果/进入开发/上线登记），保证状态与字段自洽；
  * 退回评审池时同时清除评审待定标记（等待重新评审）。操作写入流转日志并通知相关人。
+ * 若该需求已同步到 PingCode（pingcode_task_id 非空），撤回时一并删除对应 PingCode 工作项；
+ * 删除失败则中止撤回（保持内外一致），由用户重试或先手动处理 PingCode。
  */
 function qly_api_devreqs_withdraw(): void
 {
@@ -679,6 +681,23 @@ function qly_api_devreqs_withdraw(): void
     $target = $map[$status];
     $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
     $now = date('Y-m-d H:i:s');
+
+    // 已同步到 PingCode 时：先删对应工作项（删失败则中止撤回，保持内外一致）
+    $pcTaskId = trim((string) ($row['pingcode_task_id'] ?? ''));
+    $pcTaskNo = trim((string) ($row['pingcode_task_no'] ?? ''));
+    $pingcodeDeleted = false;
+    if ($pcTaskId !== '') {
+        require_once __DIR__ . '/../inc/pingcode.php';
+        if (!qly_pingcode_configured()) {
+            qly_fail('该需求已同步到 PingCode，但 PingCode 未配置（缺少 PINGCODE_CLIENT_ID / PINGCODE_CLIENT_SECRET / PINGCODE_PROJECT_ID），无法撤回；请先在 .env 补充配置');
+        }
+        try {
+            qly_pingcode_delete_task($pcTaskId);
+            $pingcodeDeleted = true;
+        } catch (Throwable $e) {
+            qly_fail('撤回中止：删除 PingCode 工作项失败（' . ($pcTaskNo !== '' ? $pcTaskNo . '，' : '') . $e->getMessage() . '）。请先在 PingCode 处理或稍后重试，期间需求状态未变更');
+        }
+    }
 
     // 按目标环节回退登记字段，保证状态与字段自洽
     $update = [
@@ -709,9 +728,26 @@ function qly_api_devreqs_withdraw(): void
             'released_by' => null,
         ];
     }
+    // 已删除 PingCode 工作项时，一并清除同步记录与负责人（与「未同步」状态一致）
+    if ($pingcodeDeleted) {
+        $update += [
+            'pingcode_task_id' => null,
+            'pingcode_task_no' => null,
+            'pingcode_task_url' => null,
+            'pingcode_synced_at' => null,
+            'assignee_id' => null,
+            'assignee_name' => null,
+        ];
+    }
     qly_update('dev_request', $id, $update);
 
-    qly_log($user, '需求撤回', (string) $row['req_no'], '撤回需求：' . $row['title'] . '（' . $status . ' → ' . $target . '，操作人：' . $name . '）');
+    $logContent = '撤回需求：' . $row['title'] . '（' . $status . ' → ' . $target . '，操作人：' . $name . '）';
+    if ($pingcodeDeleted) {
+        $logContent .= '；已删除 PingCode 工作项' . ($pcTaskNo !== '' ? '（' . $pcTaskNo . '）' : '');
+    } elseif ($pcTaskId !== '') {
+        $logContent .= '；PingCode 工作项未删除（已保留同步记录）';
+    }
+    qly_log($user, '需求撤回', (string) $row['req_no'], $logContent);
     // 通知提交人（进度被退回）与开发工程师（退回后重新出现在待处理环节）
     $submitterIds = array_values(array_filter([(int) $row['submitter_id']]));
     if ($submitterIds) {
@@ -724,7 +760,10 @@ function qly_api_devreqs_withdraw(): void
         '/dev/reqs/' . $id,
         (int) $user['id']
     );
-    qly_ok(['status' => $target], '已撤回到「' . $target . '」');
+    qly_ok(
+        ['status' => $target, 'pingcodeDeleted' => $pingcodeDeleted],
+        '已撤回到「' . $target . '」' . ($pingcodeDeleted ? '，并删除了 PingCode 工作项' : '')
+    );
 }
 
 /**

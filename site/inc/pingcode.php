@@ -602,3 +602,30 @@ function qly_pingcode_attach_tag(string $workItemId, string $tagId): void
         throw $e;
     }
 }
+
+/**
+ * 删除工作项（幂等）：已删除/不存在时视为成功。
+ * 实测（2026-10-14）：DELETE /v1/project/work_items/{id} 成功；
+ * 对不存在（或已删）的工作项返回 HTTP 400「工作项资源不存在」。
+ * 删除失败（非「不存在」类错误，如无权限/网络）向上抛异常，由调用方决定是否中止主流程。
+ */
+function qly_pingcode_delete_task(string $workItemId): void
+{
+    $id = trim($workItemId);
+    if ($id === '') {
+        return;
+    }
+    try {
+        qly_pingcode_api('DELETE', '/v1/project/work_items/' . rawurlencode($id));
+    } catch (Throwable $e) {
+        $msg = $e->getMessage();
+        // 已删除/不存在：幂等成功
+        if (mb_strpos($msg, '不存在') !== false
+            || mb_stripos($msg, 'not exist') !== false
+            || mb_stripos($msg, 'not found') !== false
+            || mb_strpos($msg, '已删除') !== false) {
+            return;
+        }
+        throw $e;
+    }
+}
