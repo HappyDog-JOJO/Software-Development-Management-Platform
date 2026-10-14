@@ -105,6 +105,8 @@ export function logTypeClass(type: string): string {
       return 'pill pill--pink'
     case '需求发布':
       return 'pill pill--green'
+    case '需求撤回':
+      return 'pill pill--red'
     default:
       return 'pill pill--grey'
   }

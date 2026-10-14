@@ -20,12 +20,13 @@ import {
   getDevRequest,
   reviewDevRequest,
   updateDevRequest,
+  withdrawDevRequest,
   type DevAttachmentPayload,
 } from '@/api/devreq'
 import { canDevReq, canReviewReq, isAdmin } from '@/constants/user'
 import AttachmentUpload from '@/components/AttachmentUpload.vue'
 import PingcodeSyncDialog from '@/components/PingcodeSyncDialog.vue'
-import type { Attachment, DevRequest } from '@/types'
+import type { Attachment, DevRequest, DevStatus } from '@/types'
 
 const props = defineProps<{ req: DevRequest; link?: boolean }>()
 const emit = defineEmits<{ (e: 'refresh'): void }>()
@@ -77,13 +78,25 @@ const showEdit = computed(
   () => props.req.status === '评审池' && (admin.value || isSubmitter.value),
 )
 const showDelete = showEdit
+
+/* —— 撤回（仅管理员）：把处理进度退回上一步（正向流程退一步；已驳回/已取消为终态不可撤回） —— */
+/** 当前状态 → 撤回后退回的目标环节（不在映射内表示不可撤回） */
+const WITHDRAW_TARGET: Partial<Record<DevStatus, DevStatus>> = {
+  需求池: '评审池',
+  开发中心: '需求池',
+  已上线: '开发中心',
+}
+const withdrawTarget = computed(() => WITHDRAW_TARGET[props.req.status])
+/** 管理员可见撤回按钮：状态处于正向流程且存在上一环节 */
+const showWithdraw = computed(() => admin.value && !!withdrawTarget.value)
 const hasActions = computed(
   () =>
     showReview.value ||
     showDevelop.value ||
     showBattlePublish.value ||
     showSyncTask.value ||
-    showEdit.value,
+    showEdit.value ||
+    showWithdraw.value,
 )
 
 /* —— 简单确认类动作 —— */
@@ -262,6 +275,25 @@ async function onRejectSubmit(): Promise<void> {
   }
 }
 
+/* —— 撤回（仅管理员）：退回上一步（需要确认） —— */
+async function onWithdraw(): Promise<void> {
+  const target = withdrawTarget.value
+  if (!target) return
+  await ElMessageBox.confirm(
+    `确定将需求「${props.req.title}」的处理进度撤回到「${target}」吗？撤回后相关登记会同步回退，并通知提交人与开发工程师。`,
+    '撤回需求',
+    { confirmButtonText: '确定撤回', cancelButtonText: '取消', type: 'warning' },
+  )
+  busy.value = true
+  try {
+    await withdrawDevRequest(props.req.id)
+    ElMessage.success(`已撤回到「${target}」`)
+    emit('refresh')
+  } finally {
+    busy.value = false
+  }
+}
+
 /* —— 发布上线（开发中心 → 已上线；开发工程师或管理员） —— */
 async function onBattlePublish(): Promise<void> {
   await ElMessageBox.confirm(
@@ -320,6 +352,8 @@ const syncDefaultDescription = computed(() => {
     <!-- 修改 / 删除（评审前；提交人本人或管理员） -->
     <el-button v-if="showEdit" v-bind="btnPrimary" @click="openEdit">修改</el-button>
     <el-button v-if="showDelete" v-bind="btnDanger" :loading="busy" @click="onDelete">删除</el-button>
+    <!-- 撤回（仅管理员）：退回上一步（需求池→评审池 / 开发中心→需求池 / 已上线→开发中心） -->
+    <el-button v-if="showWithdraw" v-bind="btnDanger" :loading="busy" @click="onWithdraw">撤回</el-button>
 
     <el-dialog
       v-model="dialogVisible"

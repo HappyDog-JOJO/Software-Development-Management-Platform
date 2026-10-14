@@ -242,7 +242,7 @@ function qly_api_devreqs_detail(): void
 
     // 时间线日志（该需求相关的全部需求流日志）
     $logs = [];
-    $types = ['提交需求', '需求评审', '需求开发', '需求发布'];
+    $types = ['提交需求', '需求评审', '需求开发', '需求发布', '需求撤回'];
     $in = [];
     $params = [':t' => '%' . $row['req_no'] . '%'];
     foreach ($types as $k => $t) {
@@ -648,6 +648,83 @@ function qly_api_devreqs_battle_publish(): void
     }
     $msg = '已上线 ' . $okCount . ' 条' . ($skipCount > 0 ? '，另有 ' . $skipCount . ' 条已跳过（状态不符）' : '');
     qly_ok(['affected' => $okCount, 'skipped' => $skipCount], $msg);
+}
+
+/**
+ * 撤回（仅管理员）：把需求的处理进度退回上一步（正向流程退一步；已驳回/已取消为终态不可撤回）。
+ * 流转规则：需求池 → 评审池；开发中心 → 需求池；已上线 → 开发中心。
+ * 回退时清理该环节产生的登记（评审结果/进入开发/上线登记），保证状态与字段自洽；
+ * 退回评审池时同时清除评审待定标记（等待重新评审）。操作写入流转日志并通知相关人。
+ */
+function qly_api_devreqs_withdraw(): void
+{
+    $user = qly_auth_user();
+    if (!qly_has_role($user, [QLY_ROLE_ADMIN])) {
+        qly_forbidden('仅管理员可撤回需求');
+    }
+    $id = qly_input_int('id', 0);
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
+    if (!$row) {
+        qly_fail('需求不存在');
+    }
+    $status = (string) $row['status'];
+    // 正向流程退一步（已驳回/已取消/评审池不在映射内，均不可撤回）
+    $map = ['需求池' => '评审池', '开发中心' => '需求池', '已上线' => '开发中心'];
+    if (!isset($map[$status])) {
+        if ($status === '评审池') {
+            qly_fail('需求已在评审池，无法再撤回');
+        }
+        qly_fail('当前状态（' . $status . '）不可撤回');
+    }
+    $target = $map[$status];
+    $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
+    $now = date('Y-m-d H:i:s');
+
+    // 按目标环节回退登记字段，保证状态与字段自洽
+    $update = [
+        'status' => $target,
+        'updated_at' => $now,
+    ];
+    if ($target === '评审池') {
+        // 退回评审池：清除本次评审结果与待定标记，等待重新评审
+        $update += [
+            'reviewer_id' => null,
+            'reviewer_name' => null,
+            'review_comment' => null,
+            'reviewed_at' => null,
+            'review_pending' => 0,
+            'pool_at' => null,
+        ];
+    } elseif ($target === '需求池') {
+        // 退回需求池：清除进入开发与上线登记
+        $update += [
+            'battle_at' => null,
+            'released_at' => null,
+            'released_by' => null,
+        ];
+    } else {
+        // 退回开发中心：清除上线登记
+        $update += [
+            'released_at' => null,
+            'released_by' => null,
+        ];
+    }
+    qly_update('dev_request', $id, $update);
+
+    qly_log($user, '需求撤回', (string) $row['req_no'], '撤回需求：' . $row['title'] . '（' . $status . ' → ' . $target . '，操作人：' . $name . '）');
+    // 通知提交人（进度被退回）与开发工程师（退回后重新出现在待处理环节）
+    $submitterIds = array_values(array_filter([(int) $row['submitter_id']]));
+    if ($submitterIds) {
+        qly_notify($submitterIds, '需求进度已撤回', '需求 ' . $row['req_no'] . ' 的进度已被管理员撤回：' . $status . ' → ' . $target, '/dev/reqs/' . $id, (int) $user['id']);
+    }
+    qly_notify(
+        qly_notify_user_ids_by_roles([QLY_ROLE_DEV]),
+        '需求被撤回到待处理环节',
+        '【' . ((string) ($row['module_name'] ?? '') !== '' ? (string) $row['module_name'] : '未分类') . '】' . $row['title'] . '（现处于' . $target . '）',
+        '/dev/reqs/' . $id,
+        (int) $user['id']
+    );
+    qly_ok(['status' => $target], '已撤回到「' . $target . '」');
 }
 
 /**

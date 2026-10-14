@@ -72,6 +72,11 @@ export function battlePublishDevRequest(ids: number[]): Promise<{ affected: numb
   return http.post<{ affected: number; skipped: number }>('/api.php?r=devreqs/battle-publish', { ids })
 }
 
+/** 撤回需求（仅管理员）：把处理进度退回上一步（需求池→评审池 / 开发中心→需求池 / 已上线→开发中心） */
+export function withdrawDevRequest(id: number): Promise<{ status: string }> {
+  return http.post<{ status: string }>('/api.php?r=devreqs/withdraw', { id })
+}
+
 /** PingCode 同步弹窗需要的选项（优先级 / 状态 / 项目成员） */
 export interface PingcodeOption {
   id: string

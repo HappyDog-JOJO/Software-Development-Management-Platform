@@ -111,6 +111,7 @@ $routes = [
     'devreqs/priority' => [['POST'], 'devreqs.php', 'qly_api_devreqs_priority'],
     'devreqs/develop' => [['POST'], 'devreqs.php', 'qly_api_devreqs_develop'],
     'devreqs/battle-publish' => [['POST'], 'devreqs.php', 'qly_api_devreqs_battle_publish'],
+    'devreqs/withdraw' => [['POST'], 'devreqs.php', 'qly_api_devreqs_withdraw'],
     'devreqs/sync-task' => [['POST'], 'devreqs.php', 'qly_api_devreqs_sync_task'],
     'devreqs/pingcode-options' => [['GET'], 'devreqs.php', 'qly_api_devreqs_pingcode_options'],
     'devreqs/pingcode-tags' => [['GET'], 'devreqs.php', 'qly_api_devreqs_pingcode_tags'],
