@@ -413,6 +413,8 @@ export interface DevRequest {
   submitterName: string
   submitterAccount: string
   submitterDepartmentName: string | null
+  /** 提交人联系电话（来自 user.phone） */
+  submitterPhone: string | null
   reviewerName: string | null
   reviewComment: string | null
   reviewedAt: string | null

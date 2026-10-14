@@ -519,7 +519,6 @@ function registerColumns(): void {
 onMounted(() => {
   registerColumns()
   void dict.load()
-  void loadAssigneeOptions()
   void load()
 })
 
@@ -571,7 +570,15 @@ watch(
         <!-- 开发中心 / 发布上线记录页：按负责人筛选（PingCode 成员） -->
         <div v-if="showAssignee" class="filter-inline__item">
           <span class="filter-inline__label">负责人</span>
-          <el-select v-model="filters.assigneeId" placeholder="全部负责人" clearable filterable style="width: 150px" @change="load">
+          <el-select
+            v-model="filters.assigneeId"
+            placeholder="全部负责人"
+            clearable
+            filterable
+            style="width: 150px"
+            @change="load"
+            @visible-change="(v: boolean) => v && loadAssigneeOptions()"
+          >
             <el-option v-for="m in assigneeOptions" :key="m.id" :label="m.name" :value="m.id" />
           </el-select>
         </div>

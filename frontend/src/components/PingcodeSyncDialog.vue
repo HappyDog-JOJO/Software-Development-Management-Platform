@@ -121,7 +121,7 @@ async function loadOptions(): Promise<void> {
     members.value = res.members
     projectName.value = res.projectName
     resetDefaults()
-  } catch (e) {
+  } catch {
     ElMessage.error('拉取 PingCode 字段失败，请检查配置或稍后重试')
     visible.value = false
   } finally {
@@ -179,7 +179,7 @@ async function onSubmit(): Promise<void> {
       style="margin-bottom: 14px"
       :title="`将在 PingCode「${projectName || '快工单'}」项目创建「史诗」工作项：共 ${ids.length} 条。${single ? '' : '标题/描述按各需求自身内容。'}`"
     />
-    <el-form v-loading="loading" label-width="96px">
+    <el-form label-width="96px">
       <template v-if="single">
         <el-form-item label="标题" required>
           <el-input v-model="form.title" maxlength="200" show-word-limit placeholder="PingCode 工作项标题" />
@@ -188,15 +188,15 @@ async function onSubmit(): Promise<void> {
           <el-input
             v-model="form.description"
             type="textarea"
-            :rows="5"
+            :rows="7"
             maxlength="2000"
             show-word-limit
-            placeholder="默认带出需求描述与来源信息"
+            placeholder="默认带出需求描述与来源信息（含提交人、提交部门、联系电话）"
           />
         </el-form-item>
       </template>
       <el-form-item label="优先级">
-        <el-select v-model="form.priorityId" placeholder="选择优先级" clearable style="width: 100%">
+        <el-select v-model="form.priorityId" placeholder="选择优先级" clearable :loading="loading" style="width: 100%">
           <el-option v-for="p in priorities" :key="p.id" :label="p.name" :value="p.id" />
         </el-select>
       </el-form-item>
@@ -206,13 +206,14 @@ async function onSubmit(): Promise<void> {
           placeholder="选择负责人（可留空）"
           clearable
           filterable
+          :loading="loading"
           style="width: 100%"
         >
           <el-option v-for="m in members" :key="m.id" :label="m.name" :value="m.id" />
         </el-select>
       </el-form-item>
       <el-form-item label="状态">
-        <el-select v-model="form.stateId" placeholder="选择状态" clearable style="width: 100%">
+        <el-select v-model="form.stateId" placeholder="选择状态" clearable :loading="loading" style="width: 100%">
           <el-option v-for="s in states" :key="s.id" :label="s.name" :value="s.id" />
         </el-select>
       </el-form-item>

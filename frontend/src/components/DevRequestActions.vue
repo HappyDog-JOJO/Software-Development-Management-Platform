@@ -284,6 +284,20 @@ const syncDialogVisible = ref(false)
 function onSyncTask(): void {
   syncDialogVisible.value = true
 }
+
+/** 同步弹窗默认描述：需求描述 + 来源信息（编号/模块/提交人/提交部门/联系电话） */
+const syncDefaultDescription = computed(() => {
+  const r = props.req
+  const lines: string[] = [r.description]
+  lines.push('')
+  lines.push('—— 由软件开发管理平台同步 ——')
+  lines.push(`需求编号：${r.reqNo}`)
+  if (r.moduleName) lines.push(`所属模块：${r.moduleName}`)
+  lines.push(`提交人：${r.submitterName || '—'}`)
+  lines.push(`提交部门：${r.submitterDepartmentName || '未分配部门'}`)
+  lines.push(`联系电话：${r.submitterPhone || '未填写'}`)
+  return lines.join('\n')
+})
 </script>
 
 <template>
@@ -385,7 +399,7 @@ function onSyncTask(): void {
       :ids="[props.req.id]"
       single
       :default-title="props.req.title"
-      :default-description="props.req.description"
+      :default-description="syncDefaultDescription"
       :default-priority="props.req.priority"
       @done="emit('refresh')"
     />

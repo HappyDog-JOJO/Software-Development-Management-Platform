@@ -100,9 +100,36 @@ export interface PingcodeSyncFields {
   tags?: string[]
 }
 
-/** 拉取 PingCode 同步弹窗的选项 */
-export function fetchPingcodeOptions(): Promise<PingcodeOptions> {
-  return http.get<PingcodeOptions>('/api.php?r=devreqs/pingcode-options')
+/** 拉取 PingCode 同步弹窗的选项（带会话内记忆：同一页面会话内复用，避免重复请求） */
+let pingcodeOptionsCache: PingcodeOptions | null = null
+let pingcodeOptionsInflight: Promise<PingcodeOptions> | null = null
+
+export function fetchPingcodeOptions(force = false): Promise<PingcodeOptions> {
+  if (!force && pingcodeOptionsCache) {
+    return Promise.resolve(pingcodeOptionsCache)
+  }
+  if (!force && pingcodeOptionsInflight) {
+    return pingcodeOptionsInflight
+  }
+  const p = http
+    .get<PingcodeOptions>('/api.php?r=devreqs/pingcode-options')
+    .then((res) => {
+      pingcodeOptionsCache = res
+      pingcodeOptionsInflight = null
+      return res
+    })
+    .catch((e) => {
+      pingcodeOptionsInflight = null
+      throw e
+    })
+  pingcodeOptionsInflight = p
+  return p
+}
+
+/** 清空 PingCode 选项记忆（如同步完成后需要强制刷新时调用） */
+export function clearPingcodeOptionsCache(): void {
+  pingcodeOptionsCache = null
+  pingcodeOptionsInflight = null
 }
 
 /** 搜索 PingCode 标签库（远程搜索，带 id 采用现有标签；查不到由后端按名建标签） */

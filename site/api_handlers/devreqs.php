@@ -86,6 +86,7 @@ function qly_devreq_row_public(array $r): array
         'submitterName' => $r['submitter_name'],
         'submitterAccount' => $r['submitter_account'],
         'submitterDepartmentName' => $r['department_name'] ?? null,
+        'submitterPhone' => $r['submitter_phone'] ?? null,
         'reviewerName' => $r['reviewer_name'],
         'reviewComment' => $r['review_comment'],
         'reviewedAt' => $r['reviewed_at'],
@@ -109,15 +110,16 @@ function qly_devreq_row_public(array $r): array
     ];
 }
 
-/** 列表基础查询（JOIN 部门） */
+/** 列表基础查询（JOIN 部门 + 提交人电话） */
 function qly_devreq_base_select(): string
 {
-    return ' SELECT i.*, d.name AS department_name';
+    return ' SELECT i.*, d.name AS department_name, su.phone AS submitter_phone';
 }
 
 function qly_devreq_base_from(): string
 {
-    return ' FROM `dev_request` i LEFT JOIN `department` d ON d.id = i.department_id';
+    return ' FROM `dev_request` i LEFT JOIN `department` d ON d.id = i.department_id'
+        . ' LEFT JOIN `user` su ON su.id = i.submitter_id';
 }
 
 /** 列表筛选（不含权限范围） */
@@ -804,7 +806,7 @@ function qly_api_devreqs_sync_task(): void
             $skipCount++;
             continue;
         }
-        $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $tid]);
+        $row = qly_one(qly_devreq_base_select() . qly_devreq_base_from() . ' WHERE i.id = :id', [':id' => $tid]);
         if (!$row || (string) $row['status'] !== '开发中心') {
             $skipCount++;
             continue;
@@ -827,6 +829,9 @@ function qly_api_devreqs_sync_task(): void
             if ((string) ($row['module_name'] ?? '') !== '') {
                 $lines[] = '所属模块：' . (string) $row['module_name'];
             }
+            $lines[] = '提交人：' . (string) ($row['submitter_name'] ?? '');
+            $lines[] = '提交部门：' . ((string) ($row['department_name'] ?? '') !== '' ? (string) $row['department_name'] : '未分配部门');
+            $lines[] = '联系电话：' . ((string) ($row['submitter_phone'] ?? '') !== '' ? (string) $row['submitter_phone'] : '未填写');
             $desc = implode("\n", $lines);
         }
         $extra = [

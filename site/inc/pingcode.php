@@ -115,6 +115,21 @@ function qly_pingcode_ca_file(): string
 /** 底层 HTTP 请求（curl）；返回 [httpStatus, 解析后的 JSON 数组|null, 原始文本] */
 function qly_pingcode_http(string $method, string $path, ?array $body, ?string $token, array $query = []): array
 {
+    $ch = qly_pingcode_curl_init($method, $path, $body, $token, $query);
+    $text = curl_exec($ch);
+    $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = curl_error($ch);
+    curl_close($ch);
+    if ($text === false) {
+        throw new RuntimeException('调用 PingCode 失败：' . ($err !== '' ? $err : '网络错误'));
+    }
+    $json = json_decode((string) $text, true);
+    return [$status, is_array($json) ? $json : null, (string) $text];
+}
+
+/** 构造一个已配置好的 curl 句柄（供单请求与并行请求共用） */
+function qly_pingcode_curl_init(string $method, string $path, ?array $body, ?string $token, array $query = []): \CurlHandle
+{
     $url = 'https://open.pingcode.com' . $path;
     if ($query) {
         $url .= (strpos($url, '?') === false ? '?' : '&') . http_build_query($query);
@@ -145,15 +160,108 @@ function qly_pingcode_http(string $method, string $path, ?array $body, ?string $
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body, JSON_UNESCAPED_UNICODE));
     }
-    $text = curl_exec($ch);
-    $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err = curl_error($ch);
-    curl_close($ch);
-    if ($text === false) {
-        throw new RuntimeException('调用 PingCode 失败：' . ($err !== '' ? $err : '网络错误'));
+    return $ch;
+}
+
+/**
+ * 并行执行多个 PingCode 请求（curl_multi），显著降低「短请求串行」的累计延迟。
+ * $reqs: 列表，每项 ['method'=>, 'path'=>, 'body'=>(?array), 'query'=>(array)]。
+ * 返回：与 $reqs 同键的「已解包 data」数组；任一失败抛 RuntimeException。
+ */
+function qly_pingcode_api_multi(array $reqs): array
+{
+    if (!$reqs) {
+        return [];
     }
-    $json = json_decode((string) $text, true);
-    return [$status, is_array($json) ? $json : null, (string) $text];
+    $token = qly_pingcode_token();
+
+    $run = static function (array $list, string $tok): array {
+        $mh = curl_multi_init();
+        $handles = [];
+        foreach ($list as $i => $r) {
+            $ch = qly_pingcode_curl_init($r['method'] ?? 'GET', $r['path'], $r['body'] ?? null, $tok, $r['query'] ?? []);
+            curl_multi_add_handle($mh, $ch);
+            $handles[$i] = $ch;
+        }
+        $running = null;
+        do {
+            $status = curl_multi_exec($mh, $running);
+            if ($running) {
+                curl_multi_select($mh, 0.5);
+            }
+        } while ($running && $status === CURLM_OK);
+        $out = [];
+        foreach ($handles as $i => $ch) {
+            $text = curl_multi_getcontent($ch);
+            $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            $json = json_decode((string) $text, true);
+            $out[$i] = ['status' => $code, 'json' => is_array($json) ? $json : null];
+            curl_multi_remove_handle($mh, $ch);
+            curl_close($ch);
+        }
+        curl_multi_close($mh);
+        return $out;
+    };
+
+    $results = $run($reqs, $token);
+    // 401（token 过期）时刷新一次并重跑这些项
+    $retry = [];
+    foreach ($results as $i => $r) {
+        if (($r['status'] ?? 0) === 401) {
+            $retry[$i] = $reqs[$i];
+        }
+    }
+    if ($retry) {
+        $token = qly_pingcode_token(true);
+        foreach ($run($retry, $token) as $i => $r) {
+            $results[$i] = $r;
+        }
+    }
+    $out = [];
+    foreach ($results as $i => $r) {
+        $status = (int) ($r['status'] ?? 0);
+        $json = $r['json'];
+        if ($status < 200 || $status >= 300 || !is_array($json)) {
+            $msg = is_array($json) ? (string) ($json['message'] ?? '') : '';
+            throw new RuntimeException('PingCode 接口调用失败（HTTP ' . $status . '）' . ($msg !== '' ? '：' . $msg : ''));
+        }
+        $data = $json['data'] ?? $json;
+        $out[$i] = is_array($data) ? $data : [];
+    }
+    return $out;
+}
+
+/** 通用缓存读写（本地 runtime 目录，避免频繁请求 PingCode 造成的加载延迟） */
+function qly_pingcode_cache_get(string $key): ?array
+{
+    $file = qly_pingcode_cache_file($key);
+    if (!is_file($file)) {
+        return null;
+    }
+    $raw = @file_get_contents($file);
+    if (!is_string($raw) || $raw === '') {
+        return null;
+    }
+    $data = json_decode($raw, true);
+    if (!is_array($data) || (int) ($data['expires_at'] ?? 0) < time()) {
+        return null;
+    }
+    return is_array($data['value'] ?? null) ? $data['value'] : null;
+}
+
+function qly_pingcode_cache_put(string $key, array $value, int $ttl): void
+{
+    $payload = json_encode(['expires_at' => time() + max(1, $ttl), 'value' => $value], JSON_UNESCAPED_UNICODE);
+    @file_put_contents(qly_pingcode_cache_file($key), $payload, LOCK_EX);
+}
+
+function qly_pingcode_cache_file(string $key): string
+{
+    $dir = qly_site_dir() . DIRECTORY_SEPARATOR . 'runtime';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    return $dir . DIRECTORY_SEPARATOR . 'pc_' . preg_replace('/[^A-Za-z0-9_]/', '_', $key) . '.json';
 }
 
 /** 取 access_token（缓存优先；失败抛业务错） */
@@ -203,6 +311,11 @@ function qly_pingcode_api(string $method, string $path, ?array $body = null, arr
 /** 解析出「史诗」类型 id（需求同步固定创建「史诗」工作项；查不到时返回空串由上层报错） */
 function qly_pingcode_task_type_id(string $projectId): string
 {
+    $cacheKey = 'typeid_' . $projectId;
+    $cached = qly_pingcode_cache_get($cacheKey);
+    if (is_array($cached) && isset($cached['id'])) {
+        return (string) $cached['id'];
+    }
     $data = qly_pingcode_api('GET', '/v1/project/work_item/types', null, ['project_id' => $projectId]);
     $items = $data['values'] ?? $data['value'] ?? $data;
     if (!is_array($items)) {
@@ -220,11 +333,15 @@ function qly_pingcode_task_type_id(string $projectId): string
             continue;
         }
         if ($name === '史诗') {
+            qly_pingcode_cache_put($cacheKey, ['id' => $id], 3600);
             return $id;
         }
         if ($fallback === '' && mb_strpos($name, '史诗') !== false) {
             $fallback = $id;
         }
+    }
+    if ($fallback !== '') {
+        qly_pingcode_cache_put($cacheKey, ['id' => $fallback], 3600);
     }
     return $fallback;
 }
@@ -238,11 +355,17 @@ function qly_pingcode_resolve_project(string $projectRef): string
     if ($projectRef === '') {
         return '';
     }
+    $cacheKey = 'proj_' . $projectRef;
+    $cached = qly_pingcode_cache_get($cacheKey);
+    if (is_array($cached) && isset($cached['id'])) {
+        return (string) $cached['id'];
+    }
     // 1) 先尝试按 ID 直查（ID 通常为字母数字短标识，中文名不会命中）
     try {
         $proj = qly_pingcode_api('GET', '/v1/project/projects/' . rawurlencode($projectRef));
         $id = (string) ($proj['id'] ?? $proj['_id'] ?? '');
         if ($id !== '') {
+            qly_pingcode_cache_put($cacheKey, ['id' => $id], 3600);
             return $id;
         }
     } catch (Throwable $e) {
@@ -266,23 +389,37 @@ function qly_pingcode_resolve_project(string $projectRef): string
         $name = (string) ($it['name'] ?? $it['display_name'] ?? '');
         $identifier = (string) ($it['identifier'] ?? $it['key'] ?? '');
         if ($name === $projectRef || $identifier === $projectRef) {
+            qly_pingcode_cache_put($cacheKey, ['id' => $id], 3600);
             return $id;
         }
         if ($fallback === '' && ($name !== '' && mb_strpos($name, $projectRef) !== false)) {
             $fallback = $id;
         }
     }
+    if ($fallback !== '') {
+        qly_pingcode_cache_put($cacheKey, ['id' => $fallback], 3600);
+    }
     return $fallback;
 }
 
 /**
  * PingCode 选项清单（创建「史诗」弹窗用）：优先级 / 状态 / 项目成员。
- * 一次拉取三组数据，供前端下拉；失败抛异常由调用方处理。
+ * 三组数据并行拉取 + 服务端短时缓存（默认 10 分钟），避免每次打开弹窗都等 PingCode。
  */
 function qly_pingcode_task_options(string $projectId, string $typeId): array
 {
+    $cacheKey = 'options_' . $projectId . '_' . $typeId;
+    $cached = qly_pingcode_cache_get($cacheKey);
+    if ($cached !== null) {
+        return $cached;
+    }
+    [$p, $s, $m] = array_values(qly_pingcode_api_multi([
+        ['method' => 'GET', 'path' => '/v1/project/work_item/priorities', 'query' => ['project_id' => $projectId]],
+        ['method' => 'GET', 'path' => '/v1/project/work_item/states', 'query' => ['project_id' => $projectId, 'workitem_type_id' => $typeId]],
+        ['method' => 'GET', 'path' => '/v1/project/projects/' . rawurlencode($projectId) . '/members', 'query' => []],
+    ]));
+
     $priorities = [];
-    $p = qly_pingcode_api('GET', '/v1/project/work_item/priorities', null, ['project_id' => $projectId]);
     foreach (($p['values'] ?? []) as $it) {
         if (!is_array($it)) {
             continue;
@@ -293,10 +430,6 @@ function qly_pingcode_task_options(string $projectId, string $typeId): array
         }
     }
     $states = [];
-    $s = qly_pingcode_api('GET', '/v1/project/work_item/states', null, [
-        'project_id' => $projectId,
-        'workitem_type_id' => $typeId,
-    ]);
     foreach (($s['values'] ?? []) as $it) {
         if (!is_array($it)) {
             continue;
@@ -307,7 +440,6 @@ function qly_pingcode_task_options(string $projectId, string $typeId): array
         }
     }
     $members = [];
-    $m = qly_pingcode_api('GET', '/v1/project/projects/' . rawurlencode($projectId) . '/members', null, []);
     foreach (($m['values'] ?? []) as $it) {
         $u = $it['user'] ?? null;
         if (!is_array($u)) {
@@ -322,7 +454,9 @@ function qly_pingcode_task_options(string $projectId, string $typeId): array
             ];
         }
     }
-    return ['priorities' => $priorities, 'states' => $states, 'members' => $members];
+    $result = ['priorities' => $priorities, 'states' => $states, 'members' => $members];
+    qly_pingcode_cache_put($cacheKey, $result, 600);
+    return $result;
 }
 
 /**
