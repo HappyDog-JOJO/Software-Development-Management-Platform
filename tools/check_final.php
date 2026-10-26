@@ -6,9 +6,16 @@ declare(strict_types=1);
 $root = dirname(__DIR__);
 require_once $root . '/site/inc/auth.php';
 
-$a = qly_one('SELECT * FROM `user` WHERE account = :a', [':a' => '商辂']);
-echo 'admin_password_1994_ok=' . (password_verify('1994', (string) $a['password_hash']) ? 'yes' : 'no') . PHP_EOL;
-echo 'admin_roles=' . $a['roles'] . PHP_EOL;
+// 管理员账号/密码不入库：通过 ADMIN_ACCOUNT / ADMIN_PASSWORD 提供，未提供则跳过
+$adminAccount = (string) (getenv('ADMIN_ACCOUNT') ?: '');
+$adminPassword = (string) (getenv('ADMIN_PASSWORD') ?: '');
+$a = $adminAccount !== '' ? qly_one('SELECT * FROM `user` WHERE account = :a', [':a' => $adminAccount]) : null;
+if ($a === null) {
+    echo 'admin_check=skipped（未设置 ADMIN_ACCOUNT / ADMIN_PASSWORD）' . PHP_EOL;
+} else {
+    echo 'admin_password_ok=' . ($adminPassword !== '' && password_verify($adminPassword, (string) $a['password_hash']) ? 'yes' : 'skipped') . PHP_EOL;
+    echo 'admin_roles=' . $a['roles'] . PHP_EOL;
+}
 $s = qly_one('SELECT * FROM `user` WHERE account = :a', [':a' => 'service02']);
 echo 'service02_roles=' . $s['roles'] . PHP_EOL;
 $sales = qly_one('SELECT * FROM `user` WHERE account = :a', [':a' => 'sales01']);

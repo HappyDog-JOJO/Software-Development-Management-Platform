@@ -33,7 +33,8 @@ $out1 = shell_exec($cmd . ' 2>&1');
 echo "--- 空库值 ---" . PHP_EOL . trim((string) $out1) . PHP_EOL;
 
 // 2) 缺少 DB_HOST 键
-$missing = "APP_NAME=售后服务平台\nDB_CONNECTION=mysql\nDB_PORT=3306\nDB_DATABASE=ai_4854_yctz9m\nDB_USERNAME=ai_4854_yctz9m\nDB_PASSWORD=d606bbc54ae2e2253826bb3a\n";
+// 夹取值用占位，避免把真实库凭据写进仓库（本用例只验证「缺 DB_HOST 必须报错」）
+$missing = "APP_NAME=售后服务平台\nDB_CONNECTION=mysql\nDB_PORT=3306\nDB_DATABASE=example_db\nDB_USERNAME=example_user\nDB_PASSWORD=example_pwd\n";
 file_put_contents($envPath, $missing);
 
 $out2 = shell_exec($cmd . ' 2>&1');

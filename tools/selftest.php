@@ -74,11 +74,14 @@ check('处理记录存在', $counts['handle_record'] > 0);
 check('日志数 >= 20', $counts['operation_log'] >= 20);
 
 echo PHP_EOL . "=== 2. 默认管理员与密码哈希 ===";
-$admin = qly_one('SELECT * FROM `user` WHERE account = :a', [':a' => '商辂']);
-check('默认管理员存在', $admin !== null);
-check('管理员角色正确', $admin && qly_has_role($admin, [QLY_ROLE_ADMIN]));
-check('密码以哈希存储（非明文）', $admin && str_starts_with((string) $admin['password_hash'], '$2y$'));
-check('密码 1994 可校验通过', $admin && password_verify('1994', (string) $admin['password_hash']));
+// 管理员账号/密码不写进仓库：用环境变量提供（未提供时跳过对应断言）
+$adminAccount = (string) (getenv('ADMIN_ACCOUNT') ?: '');
+$adminPassword = (string) (getenv('ADMIN_PASSWORD') ?: '');
+$admin = $adminAccount !== '' ? qly_one('SELECT * FROM `user` WHERE account = :a', [':a' => $adminAccount]) : null;
+check('默认管理员存在（设 ADMIN_ACCOUNT 后校验）', $adminAccount === '' || $admin !== null);
+check('管理员角色正确', $admin === null || qly_has_role($admin, [QLY_ROLE_ADMIN]));
+check('密码以哈希存储（非明文）', $admin === null || str_starts_with((string) $admin['password_hash'], '$2y$'));
+check('管理员密码可校验通过（设 ADMIN_PASSWORD 后校验）', $admin === null || $adminPassword === '' || password_verify($adminPassword, (string) $admin['password_hash']));
 
 echo PHP_EOL . "=== 3. 字典预置项 ===";
 $valueNames = qly_all("SELECT name FROM `dict_item` WHERE type='value' AND status=1 ORDER BY sort");

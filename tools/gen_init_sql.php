@@ -436,11 +436,13 @@ foreach (['department', 'user', 'user_token', 'dict_item', 'issue', 'issue_attac
 /* ---------------- 初始数据：仅管理员账号 ----------------
  * 说明：本应用交付时为空库（不预置业务数据与演示数据），
  * 仅保留唯一管理员账号用于首次登录，部门/字典等由管理员登录后自行维护。
- * 账号：商辂 / 1994（首次登录后请修改密码）
+ * 账号与初始密码见部署环境（不入库）；首次登录后请及时修改密码
  */
-$sql[] = '-- 初始账号：仅保留管理员（账号 商辂 / 密码 1994，登录后请及时修改）';
+$sql[] = '-- 初始账号：仅保留管理员（账号与初始密码由部署环境提供，不入库；登录后请及时修改）';
 $sql[] = 'INSERT INTO `user` (`id`,`account`,`password_hash`,`name`,`phone`,`avatar`,`department_id`,`roles`,`status`,`must_change_password`,`created_at`) VALUES (1,'
-    . q('商辂') . ',' . q(h('1994')) . ',' . q('商辂') . ',' . q('13375666190') . ',NULL,NULL,' . q('管理员') . ',1,0, '
+    . q(getenv('SEED_ADMIN_ACCOUNT') ?: 'admin') . ','
+    . q(h(getenv('SEED_ADMIN_PASSWORD') ?: 'Admin@2026')) . ','
+    . q('管理员') . ',NULL,NULL,NULL,' . q('管理员') . ',1,1, '
     . q('2026-06-01 09:30:00') . ')'
     . ' ON DUPLICATE KEY UPDATE `name`=VALUES(`name`),`phone`=VALUES(`phone`),`roles`=VALUES(`roles`),'
     . '`status`=VALUES(`status`),`must_change_password`=VALUES(`must_change_password`);';
@@ -461,11 +463,11 @@ $sql[] = 'INSERT INTO `user` (`id`,`account`,`password_hash`,`name`,`phone`,`dep
 $sql[] = '';
 $sql[] = '-- 需求管理模块样例需求（各环节一条；module_id 留空，仅写模块名称快照，避免依赖字典种子）';
 $sql[] = 'INSERT INTO `dev_request` (`id`,`req_no`,`title`,`description`,`module_id`,`module_name`,`priority`,`status`,`submitter_id`,`submitter_account`,`submitter_name`,`reviewer_id`,`reviewer_name`,`review_comment`,`reviewed_at`,`pm_id`,`pm_name`,`design_doc`,`branch`,`dev_leader_id`,`dev_leader_name`,`designed_at`,`dev_done_note`,`dev_done_at`,`inspector_id`,`inspector_name`,`inspect_result`,`inspect_comment`,`inspected_at`,`reject_count`,`released_at`,`released_by`,`pingcode_task_id`,`pingcode_task_no`,`pingcode_task_url`,`pingcode_synced_at`,`pool_at`,`design_at`,`battle_at`,`inspect_at`,`frontline_at`,`created_at`,`updated_at`,`design_url`) VALUES'
-    . ' (9001,\'XQDEMO01\',\'客户对账单导出增加筛选条件\',\'销售导出对账单时希望按时间范围与客户名称筛选，减少手工整理工作量。\',NULL,\'综合\',\'紧急\',\'评审池\',1,\'商辂\',\'商辂\',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,\'2026-10-06 09:10:00\',NULL,NULL),'
-    . ' (9002,\'XQDEMO02\',\'售后报表支持按部门导出\',\'管理员希望把售后报表按部门拆分导出，方便月度经营分析会直接使用。\',NULL,\'报表\',\'高\',\'需求池\',1,\'商辂\',\'商辂\',901,\'评审委员甲\',\'需求明确，价值清晰，通过。\',\'2026-10-06 09:20:00\',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,NULL,NULL,NULL,NULL,\'2026-10-06 09:20:00\',NULL,NULL,NULL,NULL,\'2026-10-06 09:15:00\',\'2026-10-06 09:20:00\',NULL),'
-    . ' (9003,\'XQDEMO03\',\'值班排班支持批量周轮值\',\'售后排班目前逐日点击，希望支持按周批量轮值并跳过周末，减轻管理员负担。\',NULL,\'排班\',\'高\',\'开发中心\',1,\'商辂\',\'商辂\',901,\'评审委员甲\',\'演示样例：通过。\',\'2026-10-06 09:30:00\',902,\'产品小王\',\'排班批量生成采用周为单位循环轮值，前端日历直接标出预览，确认后一次性写入；接口复用 duty/batch。\',\'feature/batch-duty\',903,\'开发老张\',\'2026-10-06 10:00:00\',NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,NULL,NULL,NULL,NULL,\'2026-10-06 09:30:00\',\'2026-10-06 09:40:00\',\'2026-10-06 10:00:00\',NULL,NULL,\'2026-10-06 09:25:00\',\'2026-10-06 10:00:00\',\'https://docs.example.com/prd/batch-duty\'),'
-    . ' (9004,\'XQDEMO04\',\'登录页品牌视觉升级\',\'登录页沿用旧品牌名，需要统一升级平台视觉与文案。\',NULL,\'综合\',\'中\',\'已上线\',1,\'商辂\',\'商辂\',901,\'评审委员甲\',\'演示样例：通过。\',\'2026-10-06 10:10:00\',902,\'产品小王\',\'沿用夜色星空插画，仅替换品牌文案与副标题。\',\'feature/brand-2026q4\',904,\'开发小李\',\'2026-10-06 10:30:00\',\'品牌文案与副标题替换完成，登录页两处入口已回归验证。\',\'2026-10-06 11:00:00\',NULL,NULL,NULL,NULL,NULL,0,\'2026-10-06 11:30:00\',\'商辂\',NULL,NULL,NULL,NULL,\'2026-10-06 10:10:00\',\'2026-10-06 10:20:00\',\'2026-10-06 10:30:00\',NULL,\'2026-10-06 11:00:00\',\'2026-10-06 10:05:00\',\'2026-10-06 11:00:00\',\'https://docs.example.com/prd/brand-2026q4\'),'
-    . ' (9005,\'XQDEMO05\',\'消息通知支持点击跳转\',\'站内消息点击后直达对应页面，减少查找步骤。\',NULL,\'综合\',\'中\',\'已上线\',1,\'商辂\',\'商辂\',901,\'评审委员甲\',\'演示样例：通过。\',\'2026-10-06 08:10:00\',902,\'产品小王\',\'消息体携带前端路由，轮询弹窗与列表点击均跳转。\',\'feature/notify-link\',903,\'开发老张\',\'2026-10-06 08:30:00\',\'消息跳转逻辑完成，站内信列表与弹窗点击均回归通过。\',\'2026-10-06 08:55:00\',NULL,NULL,NULL,NULL,NULL,0,\'2026-10-06 09:00:00\',\'商辂\',NULL,NULL,NULL,NULL,\'2026-10-06 08:10:00\',\'2026-10-06 08:20:00\',\'2026-10-06 08:30:00\',NULL,\'2026-10-06 08:55:00\',\'2026-10-06 08:05:00\',\'2026-10-06 09:00:00\',\'https://docs.example.com/prd/notify-link\')'
+    . ' (9001,\'XQDEMO01\',\'客户对账单导出增加筛选条件\',\'销售导出对账单时希望按时间范围与客户名称筛选，减少手工整理工作量。\',NULL,\'综合\',\'紧急\',\'评审池\',1,\'管理员\',\'管理员\',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,\'2026-10-06 09:10:00\',NULL,NULL),'
+    . ' (9002,\'XQDEMO02\',\'售后报表支持按部门导出\',\'管理员希望把售后报表按部门拆分导出，方便月度经营分析会直接使用。\',NULL,\'报表\',\'高\',\'需求池\',1,\'管理员\',\'管理员\',901,\'评审委员甲\',\'需求明确，价值清晰，通过。\',\'2026-10-06 09:20:00\',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,NULL,NULL,NULL,NULL,\'2026-10-06 09:20:00\',NULL,NULL,NULL,NULL,\'2026-10-06 09:15:00\',\'2026-10-06 09:20:00\',NULL),'
+    . ' (9003,\'XQDEMO03\',\'值班排班支持批量周轮值\',\'售后排班目前逐日点击，希望支持按周批量轮值并跳过周末，减轻管理员负担。\',NULL,\'排班\',\'高\',\'开发中心\',1,\'管理员\',\'管理员\',901,\'评审委员甲\',\'演示样例：通过。\',\'2026-10-06 09:30:00\',902,\'产品小王\',\'排班批量生成采用周为单位循环轮值，前端日历直接标出预览，确认后一次性写入；接口复用 duty/batch。\',\'feature/batch-duty\',903,\'开发老张\',\'2026-10-06 10:00:00\',NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,NULL,NULL,NULL,NULL,\'2026-10-06 09:30:00\',\'2026-10-06 09:40:00\',\'2026-10-06 10:00:00\',NULL,NULL,\'2026-10-06 09:25:00\',\'2026-10-06 10:00:00\',\'https://docs.example.com/prd/batch-duty\'),'
+    . ' (9004,\'XQDEMO04\',\'登录页品牌视觉升级\',\'登录页沿用旧品牌名，需要统一升级平台视觉与文案。\',NULL,\'综合\',\'中\',\'已上线\',1,\'管理员\',\'管理员\',901,\'评审委员甲\',\'演示样例：通过。\',\'2026-10-06 10:10:00\',902,\'产品小王\',\'沿用夜色星空插画，仅替换品牌文案与副标题。\',\'feature/brand-2026q4\',904,\'开发小李\',\'2026-10-06 10:30:00\',\'品牌文案与副标题替换完成，登录页两处入口已回归验证。\',\'2026-10-06 11:00:00\',NULL,NULL,NULL,NULL,NULL,0,\'2026-10-06 11:30:00\',\'管理员\',NULL,NULL,NULL,NULL,\'2026-10-06 10:10:00\',\'2026-10-06 10:20:00\',\'2026-10-06 10:30:00\',NULL,\'2026-10-06 11:00:00\',\'2026-10-06 10:05:00\',\'2026-10-06 11:00:00\',\'https://docs.example.com/prd/brand-2026q4\'),'
+    . ' (9005,\'XQDEMO05\',\'消息通知支持点击跳转\',\'站内消息点击后直达对应页面，减少查找步骤。\',NULL,\'综合\',\'中\',\'已上线\',1,\'管理员\',\'管理员\',901,\'评审委员甲\',\'演示样例：通过。\',\'2026-10-06 08:10:00\',902,\'产品小王\',\'消息体携带前端路由，轮询弹窗与列表点击均跳转。\',\'feature/notify-link\',903,\'开发老张\',\'2026-10-06 08:30:00\',\'消息跳转逻辑完成，站内信列表与弹窗点击均回归通过。\',\'2026-10-06 08:55:00\',NULL,NULL,NULL,NULL,NULL,0,\'2026-10-06 09:00:00\',\'管理员\',NULL,NULL,NULL,NULL,\'2026-10-06 08:10:00\',\'2026-10-06 08:20:00\',\'2026-10-06 08:30:00\',NULL,\'2026-10-06 08:55:00\',\'2026-10-06 08:05:00\',\'2026-10-06 09:00:00\',\'https://docs.example.com/prd/notify-link\')'
     . ' ON DUPLICATE KEY UPDATE `title`=VALUES(`title`),`description`=VALUES(`description`),`priority`=VALUES(`priority`),`status`=VALUES(`status`),`design_url`=VALUES(`design_url`),`updated_at`=VALUES(`updated_at`);';
 $sql[] = '';
 /* ---------------- 初始数据：销售分析（输单）字典与演示输单 ---------------- */
@@ -504,7 +506,7 @@ foreach ($demoLosses as $r) {
         . ',NULL,' . q($r[7]) . ',NULL,' . q($r[8])
         . ',' . (int) $r[9] . ',' . (int) $r[10] . ',' . q(number_format((float) $r[11], 2, '.', ''))
         . ',' . q($r[12]) . ',' . q($r[13])
-        . ',1,' . q('商辂') . ',' . q('商辂') . ',NULL,NULL,' . q($r[14]) . ',NULL)';
+        . ',1,' . q('管理员') . ',' . q('管理员') . ',NULL,NULL,' . q($r[14]) . ',NULL)';
 }
 $sql[] = '';
 $sql[] = '-- 销售分析演示输单（业务员统一挂管理员账号；字典 ID 由下方回填语句补齐，避免依赖自增 ID）';

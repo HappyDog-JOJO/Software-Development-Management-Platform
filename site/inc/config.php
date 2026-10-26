@@ -147,7 +147,8 @@ function qly_app_config(): array
         'avatar_max_size' => 2 * 1024 * 1024,
         'token_ttl' => 7 * 24 * 3600,
         'default_password' => '123456',
-        'admin_account' => '商辂',
-        'admin_password' => '1994',
+        // 管理员凭据不写进代码：真实值见部署环境，账号由 database/init.sql 初始化
+        'admin_account' => '',
+        'admin_password' => '',
     ];
 }

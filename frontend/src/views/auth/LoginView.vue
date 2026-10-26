@@ -23,9 +23,12 @@ const rules: FormRules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 
-/** 演示账号（开发模式显示） */
+/**
+ * 演示账号（仅开发模式显示）。
+ * 注意：真实管理员账号与密码不入库，也不写进前端产物；
+ * 需要时在本地用 .env / 平台环境说明里的账号登录。
+ */
 const demoAccounts = [
-  { account: '商辂', password: '1994', role: '管理员' },
   { account: 'sales01', password: '123456', role: '销售员' },
   { account: 'service01', password: '123456', role: '售后服务人员' },
   { account: 'manager01', password: '123456', role: '销售经理' },

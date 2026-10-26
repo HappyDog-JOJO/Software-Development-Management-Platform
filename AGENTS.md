@@ -22,17 +22,19 @@
 
 ## 三、可用资源（联调与部署时使用）
 
+> ⚠️ 本文件会随仓库公开，**不得写入真实凭据**。具体值见平台环境说明或本地 `.env`（`.env` 已在 .gitignore 中，不入库）。
+
 - MySQL 数据库
-  - Host：121.42.14.64：3306
-  - 数据库：ai_4854_yctz9m
-  - 用户名：ai_4854_yctz9m
-  - 密码：d606bbc54ae2e2253826bb3a
+  - Host：`<DB_HOST>`：3306
+  - 数据库：`<DB_DATABASE>`
+  - 用户名：`<DB_USERNAME>`
+  - 密码：`<DB_PASSWORD>`
 
 - FTP 上传
-  - 地址：ftp://121.42.14.64
-  - 用户名：ai_4854_yctz9m
-  - 密码：38415b5344fd
-  - 目标目录：/www/wwwroot/ggf89d（登录后当前目录即站点根，上传即生效）
+  - 地址：ftp://`<FTP_HOST>`
+  - 用户名：`<FTP_USERNAME>`
+  - 密码：`<FTP_PASSWORD>`
+  - 目标目录：`<SITE_ROOT>`（登录后当前目录即站点根，上传即生效）
 
-- 域名访问地址：https://ggf89d.kgongdan.com
+- 域名访问地址：`https://<YOUR_DOMAIN>`
   - 代码上传到站点根目录后即可访问，无需额外操作。

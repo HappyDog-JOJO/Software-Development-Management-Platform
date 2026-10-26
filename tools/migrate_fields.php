@@ -38,8 +38,10 @@ if (!colExists($pdo, 'user', 'must_change_password')) {
     echo "user.must_change_password exists\n";
 }
 
-// 默认管理员需首次改密（保持与 init.sql 种子一致）
-$pdo->exec("UPDATE `user` SET `must_change_password` = 1 WHERE `account` = '商辂'");
+// 默认管理员需首次改密（保持与 init.sql 种子一致；账号不写死，可用 SEED_ADMIN_ACCOUNT 覆盖）
+$adminAccount = (string) (getenv('SEED_ADMIN_ACCOUNT') ?: 'admin');
+$stAdmin = $pdo->prepare('UPDATE `user` SET `must_change_password` = 1 WHERE `account` = :a');
+$stAdmin->execute([':a' => $adminAccount]);
 echo "admin must_change_password = 1\n";
 
 // user.last_login_at
