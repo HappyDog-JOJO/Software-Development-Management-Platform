@@ -157,13 +157,20 @@ CREATE TABLE IF NOT EXISTS `issue` (
   `handler_id` INT UNSIGNED DEFAULT NULL COMMENT '最新处理人ID',
   `handler_name` VARCHAR(60) DEFAULT NULL COMMENT '最新处理人',
   `handled_at` DATETIME DEFAULT NULL COMMENT '最新处理时间',
+  `pingcode_task_id` VARCHAR(64) DEFAULT NULL COMMENT 'PingCode 工作项ID（同步后回写）',
+  `pingcode_task_no` VARCHAR(64) DEFAULT NULL COMMENT 'PingCode 工作项编号（如 #123）',
+  `pingcode_task_url` VARCHAR(255) DEFAULT NULL COMMENT 'PingCode 工作项链接',
+  `pingcode_synced_at` DATETIME DEFAULT NULL COMMENT '最近一次同步到 PingCode 的时间',
+  `pingcode_assignee_id` VARCHAR(64) DEFAULT NULL COMMENT '同步时的 PingCode 负责人ID',
+  `pingcode_assignee_name` VARCHAR(60) DEFAULT NULL COMMENT '同步时的 BUG 处理人姓名（排班顺位快照）',
   `created_at` DATETIME NOT NULL COMMENT '提交时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_issue_no` (`issue_no`),
   KEY `idx_issue_submitter` (`submitter_id`),
   KEY `idx_issue_dept` (`department_id`),
   KEY `idx_issue_status` (`status`),
-  KEY `idx_issue_created` (`created_at`)
+  KEY `idx_issue_created` (`created_at`),
+  KEY `idx_issue_pingcode` (`pingcode_task_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='问题';
 SQL;
 
@@ -246,6 +253,21 @@ CREATE TABLE IF NOT EXISTS `duty_schedule` (
   UNIQUE KEY `uk_duty_date` (`duty_date`),
   KEY `idx_duty_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='售后值班排班';
+SQL;
+
+$ddl['bug_duty_order'] = <<<'SQL'
+CREATE TABLE IF NOT EXISTS `bug_duty_order` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `user_id` INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '系统用户ID（历史字段；改成 PingCode 成员排班后固定为 0）',
+  `user_name` VARCHAR(60) NOT NULL COMMENT '参与人姓名（取自 PingCode 成员名，冗余展示）',
+  `sort` INT NOT NULL DEFAULT 0 COMMENT '顺位（从 1 开始，数值越小越靠前）',
+  `pingcode_member_id` VARCHAR(64) DEFAULT NULL COMMENT 'PingCode 成员ID（人员来源与指派依据）',
+  `created_at` DATETIME NOT NULL COMMENT '创建时间',
+  `updated_at` DATETIME NOT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_bug_duty_member` (`pingcode_member_id`),
+  KEY `idx_bug_duty_sort` (`sort`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='BUG 修复排班顺序（按顺位轮值，不排日期）';
 SQL;
 
 $ddl['operation_log'] = <<<'SQL'
@@ -367,7 +389,45 @@ CREATE TABLE IF NOT EXISTS `dev_request_attachment` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='需求附件';
 SQL;
 
-foreach (['department', 'user', 'user_token', 'dict_item', 'issue', 'issue_attachment', 'issue_append', 'handle_record', 'handle_attachment', 'duty_schedule', 'notice', 'operation_log', 'notification', 'site_config', 'dev_request', 'dev_request_attachment'] as $t) {
+$ddl['lost_order'] = <<<'SQL'
+CREATE TABLE IF NOT EXISTS `lost_order` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `lost_no` VARCHAR(32) NOT NULL COMMENT '输单编号（SD+时间戳）',
+  `customer_name` VARCHAR(120) NOT NULL COMMENT '客户名称',
+  `lost_at` DATETIME NOT NULL COMMENT '丢单时间',
+  `loss_type_id` INT UNSIGNED DEFAULT NULL COMMENT '输单类型字典ID',
+  `loss_type_name` VARCHAR(60) DEFAULT NULL COMMENT '输单类型名称（快照）',
+  `industry_id` INT UNSIGNED DEFAULT NULL COMMENT '所属行业字典ID',
+  `industry_name` VARCHAR(60) DEFAULT NULL COMMENT '所属行业名称（快照）',
+  `company_scale_id` INT UNSIGNED DEFAULT NULL COMMENT '企业规模字典ID',
+  `company_scale_name` VARCHAR(60) DEFAULT NULL COMMENT '企业规模名称（快照）',
+  `loss_stage_id` INT UNSIGNED DEFAULT NULL COMMENT '丢单阶段字典ID',
+  `loss_stage_name` VARCHAR(60) DEFAULT NULL COMMENT '丢单阶段名称（快照）',
+  `budget_match_id` INT UNSIGNED DEFAULT NULL COMMENT '预算匹配字典ID',
+  `budget_match_name` VARCHAR(60) DEFAULT NULL COMMENT '预算匹配名称（快照）',
+  `remote_demo` TINYINT NOT NULL DEFAULT 0 COMMENT '是否远程演示：1是 0否',
+  `customized` TINYINT NOT NULL DEFAULT 0 COMMENT '是否涉及定制化：1是 0否',
+  `final_quote` DECIMAL(12,2) DEFAULT NULL COMMENT '最终报价（元）',
+  `customer_choice` VARCHAR(500) DEFAULT NULL COMMENT '客户最终选择',
+  `reason` TEXT NOT NULL COMMENT '输单原因描述',
+  `salesman_id` INT UNSIGNED NOT NULL COMMENT '业务员ID（登记人）',
+  `salesman_account` VARCHAR(64) NOT NULL COMMENT '业务员账号',
+  `salesman_name` VARCHAR(60) NOT NULL COMMENT '业务员姓名',
+  `department_id` INT UNSIGNED DEFAULT NULL COMMENT '所属部门ID（登记时快照）',
+  `department_name` VARCHAR(60) DEFAULT NULL COMMENT '所属部门名称（登记时快照）',
+  `created_at` DATETIME NOT NULL COMMENT '提交时间',
+  `updated_at` DATETIME DEFAULT NULL COMMENT '最近更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_lost_no` (`lost_no`),
+  KEY `idx_lost_at` (`lost_at`),
+  KEY `idx_lost_salesman` (`salesman_id`),
+  KEY `idx_lost_type` (`loss_type_id`),
+  KEY `idx_lost_stage` (`loss_stage_id`),
+  KEY `idx_lost_dept` (`department_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='输单记录（销售分析）';
+SQL;
+
+foreach (['department', 'user', 'user_token', 'dict_item', 'issue', 'issue_attachment', 'issue_append', 'handle_record', 'handle_attachment', 'duty_schedule', 'bug_duty_order', 'notice', 'operation_log', 'notification', 'site_config', 'dev_request', 'dev_request_attachment', 'lost_order'] as $t) {
     $sql[] = '-- 表：' . $t;
     $sql[] = $ddl[$t];
     $sql[] = '';
@@ -408,6 +468,54 @@ $sql[] = 'INSERT INTO `dev_request` (`id`,`req_no`,`title`,`description`,`module
     . ' (9005,\'XQDEMO05\',\'消息通知支持点击跳转\',\'站内消息点击后直达对应页面，减少查找步骤。\',NULL,\'综合\',\'中\',\'已上线\',1,\'商辂\',\'商辂\',901,\'评审委员甲\',\'演示样例：通过。\',\'2026-10-06 08:10:00\',902,\'产品小王\',\'消息体携带前端路由，轮询弹窗与列表点击均跳转。\',\'feature/notify-link\',903,\'开发老张\',\'2026-10-06 08:30:00\',\'消息跳转逻辑完成，站内信列表与弹窗点击均回归通过。\',\'2026-10-06 08:55:00\',NULL,NULL,NULL,NULL,NULL,0,\'2026-10-06 09:00:00\',\'商辂\',NULL,NULL,NULL,NULL,\'2026-10-06 08:10:00\',\'2026-10-06 08:20:00\',\'2026-10-06 08:30:00\',NULL,\'2026-10-06 08:55:00\',\'2026-10-06 08:05:00\',\'2026-10-06 09:00:00\',\'https://docs.example.com/prd/notify-link\')'
     . ' ON DUPLICATE KEY UPDATE `title`=VALUES(`title`),`description`=VALUES(`description`),`priority`=VALUES(`priority`),`status`=VALUES(`status`),`design_url`=VALUES(`design_url`),`updated_at`=VALUES(`updated_at`);';
 $sql[] = '';
+/* ---------------- 初始数据：销售分析（输单）字典与演示输单 ---------------- */
+$dictSeeds = [
+    'loss_type' => ['竞争对手抢单', '客户预算取消', '项目延期', '客户自研', '价格问题', '需求不匹配', '功能缺失', '信任不足', '其他'],
+    'industry' => ['机加工', '制造业', '金融', '互联网', '零售', '医疗健康', '教育', '政府与公共事业', '能源', '物流', '其他'],
+    'company_scale' => ['大型企业100人以上', '中型企业50-100人', '小型企业10-50人', '初创公司10人以下'],
+    'loss_stage' => ['线索', '需求确认', '方案', '演示与试用', '报价', '商务谈判', '合同'],
+    'budget_match' => ['符合预算', '报价超预算', '预算未明确'],
+];
+$dictRows = [];
+foreach ($dictSeeds as $type => $names) {
+    foreach ($names as $i => $name) {
+        $dictRows[] = '(' . q($type) . ',' . q($name) . ',' . ($i + 1) . ',1,' . q('2026-10-23 09:00:00') . ')';
+    }
+}
+$sql[] = '';
+$sql[] = '-- 销售分析字典种子（输单类型/所属行业/企业规模/丢单阶段/预算匹配；重复执行只更新排序）';
+$sql[] = 'INSERT INTO `dict_item` (`type`,`name`,`sort`,`status`,`created_at`) VALUES ' . implode(',', $dictRows)
+    . ' ON DUPLICATE KEY UPDATE `sort`=VALUES(`sort`);';
+
+$demoLosses = [
+    [9101, 'SDDEMO01', '江苏西赛铭过滤', '2026-10-08 14:51:00', '其他', '制造业', '小型企业10-50人', '方案', '符合预算', 1, 0, 10000.00, '无', '客户已付款 10000 元，但客户没有独立服务器，现有服务器还有其他系统，我们无法部署，客户认为再买服务器不划算，最终退单。', '2026-10-08 14:51:00'],
+    [9102, 'SDDEMO02', '杭州锦程包装', '2026-10-09 14:58:00', '客户预算取消', '零售', '小型企业10-50人', '商务谈判', '符合预算', 1, 0, 9800.00, '2000 元每年的售后系统', '功能试用都能满足，老板觉得买断不划算，更愿意按年付费；给了意向金方案后仍选择竞品。', '2026-10-09 14:58:00'],
+    [9103, 'SDDEMO03', '永康市谦益工贸有限公司', '2026-10-12 15:04:00', '价格问题', '制造业', '小型企业10-50人', '报价', '预算未明确', 0, 0, 19800.00, '不详', '晚上咨询联系，初步沟通生产保温杯；告知买断费用 1-2 万后微信介绍无回应，电话沟通称价格太高不考虑。', '2026-10-12 15:04:00'],
+    [9104, 'SDDEMO04', '鼎派实业金衣包装有限公司', '2026-10-15 15:13:00', '价格问题', '制造业', '小型企业10-50人', '报价', '报价超预算', 1, 0, 8800.00, '不详', '已远程演示，做了两份报价；客户称预算只有千把块，认为开发成本很低，仍沿用原作业模式。', '2026-10-15 15:13:00'],
+    [9105, 'SDDEMO05', '厦门正水炭纤维科技有限公司', '2026-10-16 15:20:00', '信任不足', '制造业', '小型企业10-50人', '演示与试用', '预算未明确', 0, 0, 39600.00, '后续联系不上', '客户要求免费试用一个月，我方要求交定金或押金并按比例扣费，客户不接受，之后失联。', '2026-10-16 15:20:00'],
+    [9106, 'SDDEMO06', '宁波海曙鞋业', '2026-10-18 10:54:00', '竞争对手抢单', '制造业', '中型企业50-100人', '商务谈判', '报价超预算', 1, 1, 25000.00, '竞品（年费两三千）', '客户执着按年付费且预算卡得紧，对比多家后选择年费仅两三千的竞品。', '2026-10-18 10:54:00'],
+    [9107, 'SDDEMO07', '上海睿信医疗器械', '2026-10-20 09:30:00', '功能缺失', '医疗健康', '中型企业50-100人', '需求确认', '预算未明确', 0, 1, 56000.00, '自研', '客户要求器械追溯编码与批次校验，现有功能缺失且定制度大，客户决定自研。', '2026-10-20 09:30:00'],
+    [9108, 'SDDEMO08', '广州云栈网络科技', '2026-10-22 16:10:00', '项目延期', '互联网', '初创公司10人以下', '线索', '符合预算', 0, 0, 12000.00, '明年再启动', '客户融资推迟，内部预算冻结，项目整体延期到明年一季度。', '2026-10-22 16:10:00'],
+];
+$lossRows = [];
+foreach ($demoLosses as $r) {
+    $lossRows[] = '(' . $r[0] . ',' . q($r[1]) . ',' . q($r[2]) . ',' . q($r[3])
+        . ',NULL,' . q($r[4]) . ',NULL,' . q($r[5]) . ',NULL,' . q($r[6])
+        . ',NULL,' . q($r[7]) . ',NULL,' . q($r[8])
+        . ',' . (int) $r[9] . ',' . (int) $r[10] . ',' . q(number_format((float) $r[11], 2, '.', ''))
+        . ',' . q($r[12]) . ',' . q($r[13])
+        . ',1,' . q('商辂') . ',' . q('商辂') . ',NULL,NULL,' . q($r[14]) . ',NULL)';
+}
+$sql[] = '';
+$sql[] = '-- 销售分析演示输单（业务员统一挂管理员账号；字典 ID 由下方回填语句补齐，避免依赖自增 ID）';
+$sql[] = 'INSERT INTO `lost_order` (`id`,`lost_no`,`customer_name`,`lost_at`,`loss_type_id`,`loss_type_name`,`industry_id`,`industry_name`,`company_scale_id`,`company_scale_name`,`loss_stage_id`,`loss_stage_name`,`budget_match_id`,`budget_match_name`,`remote_demo`,`customized`,`final_quote`,`customer_choice`,`reason`,`salesman_id`,`salesman_account`,`salesman_name`,`department_id`,`department_name`,`created_at`,`updated_at`) VALUES '
+    . implode(',', $lossRows)
+    . ' ON DUPLICATE KEY UPDATE `customer_name`=VALUES(`customer_name`),`lost_at`=VALUES(`lost_at`),`reason`=VALUES(`reason`),`final_quote`=VALUES(`final_quote`);';
+$sql[] = '-- 演示数据回填字典 ID（仅在为空时回填，可重复执行）';
+foreach ([['loss_type', 'loss_type_id', 'loss_type_name'], ['industry', 'industry_id', 'industry_name'], ['company_scale', 'company_scale_id', 'company_scale_name'], ['loss_stage', 'loss_stage_id', 'loss_stage_name'], ['budget_match', 'budget_match_id', 'budget_match_name']] as $m) {
+    $sql[] = 'UPDATE `lost_order` l JOIN `dict_item` d ON d.`type`=' . q($m[0]) . ' AND d.`name`=l.`' . $m[2] . '`'
+        . ' SET l.`' . $m[1] . '`=d.`id` WHERE l.`' . $m[1] . '` IS NULL;';
+}
 
 $sql[] = '';
 $sql[] = 'COMMIT;';

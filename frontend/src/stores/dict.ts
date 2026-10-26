@@ -14,6 +14,12 @@ export const useDictStore = defineStore('dict', () => {
   const values = computed(() => enabledOf('value'))
   const handleStatuses = computed(() => enabledOf('handle'))
   const categories = computed(() => enabledOf('category'))
+  // 销售分析（输单）五个维度
+  const lossTypes = computed(() => enabledOf('loss_type'))
+  const industries = computed(() => enabledOf('industry'))
+  const companyScales = computed(() => enabledOf('company_scale'))
+  const lossStages = computed(() => enabledOf('loss_stage'))
+  const budgetMatches = computed(() => enabledOf('budget_match'))
 
   function enabledOf(type: DictType): DictItem[] {
     return items.value
@@ -61,5 +67,24 @@ export const useDictStore = defineStore('dict', () => {
     loaded.value = false
   }
 
-  return { items, loaded, loading, modules, values, handleStatuses, categories, enabledOf, allOf, nameOf, load, applyItems, reset }
+  return {
+    items,
+    loaded,
+    loading,
+    modules,
+    values,
+    handleStatuses,
+    categories,
+    lossTypes,
+    industries,
+    companyScales,
+    lossStages,
+    budgetMatches,
+    enabledOf,
+    allOf,
+    nameOf,
+    load,
+    applyItems,
+    reset,
+  }
 })

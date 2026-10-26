@@ -52,6 +52,8 @@ $routes = [
 
     'dicts' => [['GET'], 'dicts.php', 'qly_api_dicts_list'],
     'bootstrap' => [['GET'], 'bootstrap.php', 'qly_api_bootstrap'],
+    // 天气（输单登记页右侧「今天」卡片；城市取 .env 的 WEATHER_CITY）
+    'weather/today' => [['GET'], 'weather.php', 'qly_api_weather_today'],
     'dicts/save' => [['POST'], 'dicts.php', 'qly_api_dicts_save'],
     'dicts/status' => [['POST', 'PUT'], 'dicts.php', 'qly_api_dicts_status'],
     'dicts/delete' => [['POST', 'DELETE'], 'dicts.php', 'qly_api_dicts_delete'],
@@ -66,6 +68,11 @@ $routes = [
     'issues/delete' => [['POST', 'DELETE'], 'issues.php', 'qly_api_issues_delete'],
     'issues/status' => [['POST', 'PUT'], 'issues.php', 'qly_api_issues_status'],
 
+    // 问题同步到 PingCode（开发工程师/管理员）：弹窗选项、标签搜索、批量同步
+    'issues/pingcode-options' => [['GET'], 'issue_pingcode.php', 'qly_api_issues_pingcode_options'],
+    'issues/pingcode-tags' => [['GET'], 'issue_pingcode.php', 'qly_api_issues_pingcode_tags'],
+    'issues/pingcode-sync' => [['POST'], 'issue_pingcode.php', 'qly_api_issues_pingcode_sync'],
+
     'upload' => [['POST'], 'upload.php', 'qly_api_upload'],
 
     'duty/list' => [['GET'], 'duty.php', 'qly_api_duty_list'],
@@ -73,6 +80,12 @@ $routes = [
     'duty/save' => [['POST', 'PUT'], 'duty.php', 'qly_api_duty_save'],
     'duty/delete' => [['POST', 'DELETE'], 'duty.php', 'qly_api_duty_delete'],
     'duty/batch' => [['POST'], 'duty.php', 'qly_api_duty_batch'],
+
+    // BUG 修复排班（顺序轮值，不排日期）
+    'bugduty/list' => [['GET'], 'bugduty.php', 'qly_api_bugduty_list'],
+    'bugduty/save' => [['POST', 'PUT'], 'bugduty.php', 'qly_api_bugduty_save'],
+    'bugduty/reset' => [['POST'], 'bugduty.php', 'qly_api_bugduty_reset'],
+    'bugduty/members' => [['GET'], 'bugduty.php', 'qly_api_bugduty_members'],
 
     // 公告：读取最新一条对全员开放（提交页灯牌）；维护仅管理员
     'notice/latest' => [['GET'], 'notice.php', 'qly_api_notice_latest'],
@@ -115,6 +128,17 @@ $routes = [
     'devreqs/sync-task' => [['POST'], 'devreqs.php', 'qly_api_devreqs_sync_task'],
     'devreqs/pingcode-options' => [['GET'], 'devreqs.php', 'qly_api_devreqs_pingcode_options'],
     'devreqs/pingcode-tags' => [['GET'], 'devreqs.php', 'qly_api_devreqs_pingcode_tags'],
+
+    // 销售分析（输单）模块（方案见 docs/销售分析模块-输单分析方案.md）
+    'salesloss/list' => [['GET'], 'salesloss.php', 'qly_api_salesloss_list'],
+    'salesloss/detail' => [['GET'], 'salesloss.php', 'qly_api_salesloss_detail'],
+    'salesloss/create' => [['POST'], 'salesloss.php', 'qly_api_salesloss_create'],
+    'salesloss/update' => [['POST', 'PUT'], 'salesloss.php', 'qly_api_salesloss_update'],
+    'salesloss/delete' => [['POST', 'DELETE'], 'salesloss.php', 'qly_api_salesloss_delete'],
+    'salesloss/overview' => [['GET'], 'salesloss.php', 'qly_api_salesloss_overview'],
+    'salesloss/dims' => [['GET'], 'salesloss.php', 'qly_api_salesloss_dims'],
+    'salesloss/cross' => [['GET'], 'salesloss.php', 'qly_api_salesloss_cross'],
+    'salesloss/ranks' => [['GET'], 'salesloss.php', 'qly_api_salesloss_ranks'],
 ];
 
 if (!isset($routes[$route])) {

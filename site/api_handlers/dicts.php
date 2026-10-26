@@ -3,7 +3,19 @@ declare(strict_types=1);
 
 /** 字典维护（仅管理员）；四类字典：所属模块 / 问题价值等级 / 处理情况 / 问题分类 */
 
-const QLY_DICT_TYPES = ['module' => '所属模块', 'value' => '问题价值等级', 'handle' => '处理情况', 'category' => '问题分类'];
+const QLY_DICT_TYPES = [
+    // 售后管理
+    'module' => '所属模块',
+    'value' => '问题价值等级',
+    'handle' => '处理情况',
+    'category' => '问题分类',
+    // 销售分析（输单）
+    'loss_type' => '输单类型',
+    'industry' => '所属行业',
+    'company_scale' => '企业规模',
+    'loss_stage' => '丢单阶段',
+    'budget_match' => '预算匹配',
+];
 
 function qly_dict_type_label(string $type): string
 {
@@ -25,6 +37,22 @@ function qly_dict_reference_count(string $type, int $itemId): int
     }
     if ($type === 'category') {
         return (int) qly_val('SELECT COUNT(*) FROM `handle_record` WHERE category_id = :id', [':id' => $itemId]);
+    }
+    // 销售分析（输单）：各维度字典被输单记录引用的条数
+    $lossColumns = [
+        'loss_type' => 'loss_type_id',
+        'industry' => 'industry_id',
+        'company_scale' => 'company_scale_id',
+        'loss_stage' => 'loss_stage_id',
+        'budget_match' => 'budget_match_id',
+    ];
+    if (isset($lossColumns[$type])) {
+        // 防御：lost_order 尚未建表时（新库/未执行迁移）不要让字典页整体 500，引用数按 0 处理
+        try {
+            return (int) qly_val('SELECT COUNT(*) FROM `lost_order` WHERE ' . $lossColumns[$type] . ' = :id', [':id' => $itemId]);
+        } catch (Throwable $e) {
+            return 0;
+        }
     }
     return 0;
 }

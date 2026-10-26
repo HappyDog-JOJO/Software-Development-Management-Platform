@@ -381,3 +381,48 @@ function qly_devreq_scope_where(array $user, string $alias = 'i'): array
     $where = ' AND (' . implode(' OR ', $conds) . ')';
     return [$where, [':__dv_u1' => $uid]];
 }
+
+/* ==================== 销售分析模块（输单）：角色能力与数据范围 ==================== */
+
+/** 可访问销售分析（输单）的角色：销售员 / 销售经理 / 管理员 */
+function qly_can_view_loss(array $user): bool
+{
+    return qly_has_role($user, [QLY_ROLE_SALES, QLY_ROLE_MANAGER, QLY_ROLE_ADMIN]);
+}
+
+/**
+ * 输单数据可见范围 SQL 片段（需与 qly_lost_visible 保持一致）。返回 [whereSql, params]。
+ * 管理员 / 销售经理：全部；销售员：仅本人登记（salesman_id = 当前用户）。
+ * 注意：业务员固定为登录人，因此"本人"即"自己登记的单"。
+ */
+function qly_lost_scope_where(array $user, string $alias = 'l'): array
+{
+    if (qly_has_role($user, [QLY_ROLE_ADMIN, QLY_ROLE_MANAGER])) {
+        return ['', []];
+    }
+    $uid = (int) ($user['id'] ?? 0);
+    if ($uid <= 0) {
+        return [' AND 1=0', []];
+    }
+    return [' AND ' . $alias . '.salesman_id = :__loss_uid', [':__loss_uid' => $uid]];
+}
+
+/** 单条输单是否在当前用户可见范围内（详情/编辑逐条校验用，与 qly_lost_scope_where 同源） */
+function qly_lost_visible(array $user, array $row): bool
+{
+    if (qly_has_role($user, [QLY_ROLE_ADMIN, QLY_ROLE_MANAGER])) {
+        return true;
+    }
+    $uid = (int) ($user['id'] ?? 0);
+    return $uid > 0 && (int) ($row['salesman_id'] ?? 0) === $uid;
+}
+
+/** 是否可编辑某条输单：本人 或 管理员（销售经理只能改自己的单） */
+function qly_can_edit_loss(array $user, array $row): bool
+{
+    if (qly_has_role($user, [QLY_ROLE_ADMIN])) {
+        return true;
+    }
+    $uid = (int) ($user['id'] ?? 0);
+    return $uid > 0 && (int) ($row['salesman_id'] ?? 0) === $uid;
+}

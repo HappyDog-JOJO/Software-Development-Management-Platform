@@ -17,6 +17,7 @@ import { fmtDateTime } from '@/utils/format'
 import type { NotificationItem } from '@/types'
 import { MENU, type MenuNode } from '@/router'
 import { APP_VERSION } from '@/constants/version'
+import { primaryRole } from '@/constants/user'
 import RoleTag from '@/components/RoleTag.vue'
 import MoonLoader from '@/components/illustrations/MoonLoader.vue'
 import ChangePasswordDialog from '@/views/auth/ChangePasswordDialog.vue'
@@ -230,6 +231,8 @@ const menuIconMap: Record<string, string> = {
   release: 'M2 21 23 12 2 3v7l15 2-15 2v7Z',
   headset: 'M12 3a8 8 0 0 0-8 8v5a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H6v-1a6 6 0 0 1 12 0v1h-2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1a3 3 0 0 0 3-3v-5a8 8 0 0 0-8-8Z',
   kanban: 'M3 4h5v16H3V4Zm6.5 0h5v10h-5V4ZM16 4h5v13h-5V4Z',
+  // 销售分析：柱状图 + 趋势线，与「报表统计」的 chart 图标区分
+  sales: 'M4 13h3v7H4v-7Zm6.5-5h3v12h-3V8ZM17 3h3v17h-3V3ZM3 21.2h18v1.4H3v-1.4Z',
   gear: 'M19.4 13a7.5 7.5 0 0 0 .1-1 7.5 7.5 0 0 0-.1-1l2.1-1.6a.5.5 0 0 0 .1-.7l-2-3.4a.5.5 0 0 0-.6-.2l-2.5 1a7.7 7.7 0 0 0-1.7-1l-.4-2.6a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.5.4l-.4 2.7a7.7 7.7 0 0 0-1.7 1l-2.5-1a.5.5 0 0 0-.6.2l-2 3.4a.5.5 0 0 0 .1.7L4.5 11a7.5 7.5 0 0 0 0 2l-2.1 1.6a.5.5 0 0 0-.1.7l2 3.4c.1.2.4.3.6.2l2.5-1a7.7 7.7 0 0 0 1.7 1l.4 2.6c0 .3.2.5.5.5h4c.2 0 .4-.2.5-.4l.4-2.7a7.7 7.7 0 0 0 1.7-1l2.5 1c.2.1.5 0 .6-.2l2-3.4a.5.5 0 0 0-.1-.7L19.4 13ZM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z',
 }
 
@@ -237,6 +240,7 @@ const menuIconMap: Record<string, string> = {
 const groupIconMap: Record<string, string> = {
   售后管理: 'headset',
   开发管理: 'kanban',
+  销售分析: 'sales',
   系统管理: 'gear',
 }
 
@@ -411,7 +415,8 @@ async function loadBootstrap(): Promise<void> {
                 {{ (auth.user?.name || auth.user?.account || '?').slice(0, 1) }}
               </el-avatar>
               <span class="topbar__name">{{ auth.user?.name || auth.user?.account }}</span>
-              <RoleTag v-if="auth.user" :roles="auth.user.roles" />
+              <!-- 顶栏只展示权限最大的一个角色（多角色时取优先级最高的），避免一排角色标签拥挤 -->
+              <RoleTag v-if="auth.user" :role="primaryRole(auth.user.roles)" />
               <span class="topbar__caret">▾</span>
             </div>
             <template #dropdown>

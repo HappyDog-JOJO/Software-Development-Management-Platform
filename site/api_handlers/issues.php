@@ -107,6 +107,12 @@ function qly_issue_row_public(array $r, int $attachCount = 0): array
         // 最新一条处理记录的备注（备注存在 handle_record 表；问题可多次追加处理，列表展示最新一条）
         'handleRemark' => (string) ($r['handle_remark'] ?? ''),
         'createdAt' => $r['created_at'],
+        // PingCode 同步状态（同步到 PingCode 后记录）
+        'pingcodeTaskId' => ($r['pingcode_task_id'] ?? null) !== null ? (string) $r['pingcode_task_id'] : null,
+        'pingcodeTaskNo' => ($r['pingcode_task_no'] ?? null) !== null ? (string) $r['pingcode_task_no'] : null,
+        'pingcodeTaskUrl' => ($r['pingcode_task_url'] ?? null) !== null ? (string) $r['pingcode_task_url'] : null,
+        'pingcodeSyncedAt' => $r['pingcode_synced_at'] ?? null,
+        'pingcodeAssigneeName' => ($r['pingcode_assignee_name'] ?? null) !== null ? (string) $r['pingcode_assignee_name'] : null,
     ];
 }
 

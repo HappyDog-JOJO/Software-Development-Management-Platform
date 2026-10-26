@@ -103,6 +103,8 @@ export interface PingcodeSyncFields {
   startAt?: string
   dueAt?: string
   tags?: string[]
+  /** 问题同步专用：auto=按 BUG 排班顺位（默认），manual=手动指定负责人（不推进顺位） */
+  rosterMode?: 'auto' | 'manual'
 }
 
 /** 拉取 PingCode 同步弹窗的选项（带会话内记忆：同一页面会话内复用，避免重复请求） */

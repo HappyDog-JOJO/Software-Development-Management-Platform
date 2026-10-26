@@ -23,6 +23,33 @@ export const ROLE_DEV: Role = '开发工程师'
 /** 可处理售后问题的角色 */
 export const HANDLE_ROLES: Role[] = [ROLE_SERVICE, ROLE_ADMIN]
 
+/**
+ * 角色权限从大到小的排序（用于只展示一个主角色）。
+ * 依据：数据范围越宽、可操作模块越多的角色排越前；管理员最高。
+ */
+export const ROLE_PRIORITY: Role[] = [
+  ROLE_ADMIN,
+  ROLE_SERVICE,
+  ROLE_MANAGER,
+  ROLE_COMMITTEE,
+  ROLE_PM,
+  ROLE_DEV,
+  ROLE_SALES,
+]
+
+/** 取权限最大的单个角色（多角色时用于顶栏等位置只展示一个） */
+export function primaryRole(roles: Role[] | undefined): Role | undefined {
+  if (!roles || roles.length === 0) {
+    return undefined
+  }
+  for (const r of ROLE_PRIORITY) {
+    if (roles.includes(r)) {
+      return r
+    }
+  }
+  return roles[0]
+}
+
 /** 可查看报表的角色 */
 export const REPORT_ROLES: Role[] = [ROLE_SERVICE, ROLE_MANAGER, ROLE_ADMIN]
 
@@ -72,6 +99,21 @@ export function canReviewReq(roles: Role[] | undefined): boolean {
 /** 可开发（认领开发）需求 */
 export function canDevReq(roles: Role[] | undefined): boolean {
   return hasAny(roles, DEV_REQ_ROLES)
+}
+
+/* ==================== 销售分析（输单）模块能力 ==================== */
+
+/** 可访问销售分析（输单）的角色：销售员 / 销售经理 / 管理员 */
+export const LOSS_ROLES: Role[] = [ROLE_SALES, ROLE_MANAGER, ROLE_ADMIN]
+
+/** 可访问销售分析（输单） */
+export function canViewLoss(roles: Role[] | undefined): boolean {
+  return hasAny(roles, LOSS_ROLES)
+}
+
+/** 可删除输单（仅管理员；销售员/销售经理可编辑自己的单但不能删） */
+export function canDeleteLoss(roles: Role[] | undefined): boolean {
+  return isAdmin(roles)
 }
 
 export function isAdmin(roles: Role[] | undefined): boolean {

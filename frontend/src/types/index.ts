@@ -11,7 +11,17 @@ export type Role =
 
 export type IssueStatus = '待处理' | '处理中' | '已处理' | '未处理' | '已驳回'
 
-export type DictType = 'module' | 'value' | 'handle' | 'category'
+export type DictType =
+  | 'module'
+  | 'value'
+  | 'handle'
+  | 'category'
+  // 销售分析（输单）五个维度
+  | 'loss_type'
+  | 'industry'
+  | 'company_scale'
+  | 'loss_stage'
+  | 'budget_match'
 
 export type LogType =
   | '登录'
@@ -29,6 +39,8 @@ export type LogType =
   | '需求开发'
   | '需求发布'
   | '需求撤回'
+  | '提交输单'
+  | '输单维护'
 
 /* ==================== 需求管理模块 ==================== */
 
@@ -186,6 +198,13 @@ export interface Issue {
   /** 最新一条处理备注（无处理记录时为空字符串） */
   handleRemark: string
   createdAt: string
+  /** PingCode 同步状态（同步后记录） */
+  pingcodeTaskId?: string | null
+  pingcodeTaskNo?: string | null
+  pingcodeTaskUrl?: string | null
+  pingcodeSyncedAt?: string | null
+  /** 同步时确定的 BUG 处理人姓名 */
+  pingcodeAssigneeName?: string | null
 }
 
 export interface IssueAppend {
@@ -391,6 +410,39 @@ export interface DutyToday {
   remark: string
 }
 
+/** BUG 修复排班顺序项（不排日期，只排顺位；人员直接来自 PingCode 项目成员） */
+export interface BugDutyItem {
+  id: number
+  /** 早期按系统用户排班时留下的用户 id；新数据固定为 0 */
+  userId: number
+  userName: string
+  /** 库里的排序值（可能小于等于 0 或与 position 不一致） */
+  sort: number
+  /** 实际展示顺位（从 1 连续编号） */
+  position: number
+  /** PingCode 项目成员 id（人员来源，必有值） */
+  pingcodeMemberId: string
+  enabled: boolean
+}
+
+/** BUG 修复排班读取/保存结果 */
+export interface BugDutyResult {
+  items: BugDutyItem[]
+  /** 当前顺位（顺序表为空时为 null） */
+  current: {
+    userId: number
+    userName: string
+    position: number
+    sort: number
+    nextSort: number
+    pingcodeMemberId: string
+  } | null
+  /** PingCode 项目成员（即排班候选人） */
+  members: Array<{ id: string; name: string; account?: string }>
+  /** 拉取 PingCode 成员失败时的提示（成功为空串） */
+  memberError?: string
+}
+
 /* ==================== 需求管理模块 ==================== */
 
 /** 需求附件（scene：submit提交/reject驳回/done完成/release上线） */
@@ -473,4 +525,129 @@ export interface DevQuery {
   pageSize?: number
   sortField?: 'createdAt' | 'priority' | 'releasedAt'
   sortOrder?: 'ASC' | 'DESC'
+}
+
+/* ==================== 销售分析（输单）==================== */
+
+/** 输单记录（业务员固定为登记人） */
+export interface LostOrder {
+  id: number
+  lostNo: string
+  customerName: string
+  lostAt: string
+  lossTypeId: number | null
+  lossTypeName: string
+  industryId: number | null
+  industryName: string
+  companyScaleId: number | null
+  companyScaleName: string
+  lossStageId: number | null
+  lossStageName: string
+  budgetMatchId: number | null
+  budgetMatchName: string
+  /** 是否远程演示：1是 0否 */
+  remoteDemo: number
+  /** 是否涉及定制化：1是 0否 */
+  customized: number
+  finalQuote: number | null
+  customerChoice: string
+  reason: string
+  salesmanId: number
+  salesmanAccount: string
+  salesmanName: string
+  departmentId: number | null
+  departmentName: string
+  createdAt: string
+  updatedAt: string | null
+}
+
+/** 输单查询条件（列表与各统计接口共用） */
+export interface LostOrderQuery {
+  dateStart?: string
+  dateEnd?: string
+  lossTypeId?: number
+  industryId?: number
+  companyScaleId?: number
+  lossStageId?: number
+  budgetMatchId?: number
+  /** '1' 远程演示 / '0' 未远程演示 / '' 不限 */
+  remoteDemo?: string
+  /** '1' 涉及定制化 / '0' 不涉及 / '' 不限 */
+  customized?: string
+  salesman?: string
+  keyword?: string
+  page?: number
+  pageSize?: number
+  sortField?: 'lostAt' | 'finalQuote' | 'createdAt'
+  sortOrder?: 'ASC' | 'DESC'
+}
+
+/** 输单概览指标 */
+export interface LossOverview {
+  total: number
+  quoteTotal: number
+  quoteCount: number
+  quoteAvg: number
+  remoteDemo: number
+  remoteDemoRate: number
+  customized: number
+  customizedRate: number
+  customerCount: number
+  salesmanCount: number
+}
+
+/** 输单维度统计项（带报价金额，便于切「单量/金额」） */
+export interface LossRankItem {
+  name: string
+  value: number
+  quoteTotal: number
+  extra: null
+}
+
+/** 多角度分布 */
+export interface LossDims {
+  lossTypes: LossRankItem[]
+  lossStages: LossRankItem[]
+  industries: LossRankItem[]
+  companyScales: LossRankItem[]
+  budgetMatches: LossRankItem[]
+  remoteDemoDist: Array<{ name: string; value: number }>
+  customizedDist: Array<{ name: string; value: number }>
+}
+
+/** 交叉分析与趋势 */
+export interface LossCross {
+  lossStages: string[]
+  lossTypes: string[]
+  matrix: Array<{ lossStage: string; lossType: string; value: number }>
+  demoMatrix: Array<{ lossType: string; demo: string; value: number }>
+  trend: Array<{ date: string; total: number; quoteTotal: number }>
+}
+
+/** 今日天气（输单登记页右侧「今天」卡片） */
+export interface WeatherToday {
+  available: boolean
+  reason?: string
+  city?: string
+  region?: string
+  text?: string
+  icon?: string
+  weatherCode?: number
+  temp?: number | null
+  feelsLike?: number | null
+  humidity?: number | null
+  wind?: number | null
+  high?: number | null
+  low?: number | null
+  sunrise?: string | null
+  sunset?: string | null
+  observedAt?: string | null
+  updatedAt?: string
+}
+
+/** 输单排行 */
+export interface LossRanks {
+  salesmen: LossRankItem[]
+  departments: LossRankItem[]
+  customers: LossRankItem[]
 }

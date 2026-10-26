@@ -168,6 +168,17 @@ body {
   --el-font-size-small: 14px;
 }
 
+/*
+ * 下拉框与单行输入框等高（同一行里不能再出现「下拉比输入框矮 4px」）。
+ * 原因：Element Plus 把 .el-select__wrapper 的 min-height 写死成 32px，
+ * 而 .el-input 用的是 --el-input-height: var(--el-component-size)（本项目 36px），
+ * 两者默认就不一致。这里让下拉框跟随同一个尺寸 token，
+ * 以后只改 --el-component-size 即可整体升降；large / small 尺寸保持 EP 原样。
+ */
+.el-select:not(.el-select--small):not(.el-select--large) .el-select__wrapper {
+  min-height: var(--el-component-size);
+}
+
 a {
   color: var(--color-primary);
   text-decoration: none;

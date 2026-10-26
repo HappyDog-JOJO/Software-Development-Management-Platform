@@ -134,6 +134,25 @@ const routes: RouteRecordRaw[] = [
           hidden: true,
         },
       },
+      /* ==================== 销售分析（输单）==================== */
+      {
+        path: 'sales/loss/create',
+        name: 'LossCreate',
+        component: () => import('@/views/sales/LossCreateView.vue'),
+        meta: { title: '输单登记', roles: [ROLE_SALES, ROLE_MANAGER, ROLE_ADMIN], icon: 'edit', group: '销售分析' },
+      },
+      {
+        path: 'sales/loss',
+        name: 'LossList',
+        component: () => import('@/views/sales/LossListView.vue'),
+        meta: { title: '输单列表', roles: [ROLE_SALES, ROLE_MANAGER, ROLE_ADMIN], icon: 'list', group: '销售分析' },
+      },
+      {
+        path: 'sales/loss/analysis',
+        name: 'LossAnalysis',
+        component: () => import('@/views/sales/LossAnalysisView.vue'),
+        meta: { title: '输单分析', roles: [ROLE_SALES, ROLE_MANAGER, ROLE_ADMIN], icon: 'chart', group: '销售分析' },
+      },
       {
         path: 'system/users',
         name: 'SystemUsers',
@@ -216,6 +235,10 @@ export const MENU: MenuNode[] = [
   { path: '/dev/pool', title: '需求池', icon: 'pool', group: '开发管理', roles: [ROLE_PM, ROLE_COMMITTEE, ROLE_DEV, ROLE_ADMIN] },
   { path: '/dev/battle', title: '开发中心', icon: 'battle', group: '开发管理', roles: [ROLE_DEV, ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN] },
   { path: '/dev/release', title: '发布上线', icon: 'release', group: '开发管理', roles: [ROLE_COMMITTEE, ROLE_ADMIN] },
+  // 销售分析（放在开发管理之后、系统管理之前）
+  { path: '/sales/loss/create', title: '输单登记', icon: 'edit', group: '销售分析', roles: [ROLE_SALES, ROLE_MANAGER, ROLE_ADMIN] },
+  { path: '/sales/loss', title: '输单列表', icon: 'list', group: '销售分析', roles: [ROLE_SALES, ROLE_MANAGER, ROLE_ADMIN] },
+  { path: '/sales/loss/analysis', title: '输单分析', icon: 'chart', group: '销售分析', roles: [ROLE_SALES, ROLE_MANAGER, ROLE_ADMIN] },
   // 系统管理（固定在最下）
   { path: '/duty', title: '值班排班', icon: 'duty', group: '系统管理', roles: [ROLE_ADMIN] },
   { path: '/system/notices', title: '公告管理', icon: 'notice', group: '系统管理', roles: [ROLE_ADMIN] },

@@ -320,13 +320,7 @@ function qly_api_devreqs_create(): void
     qly_devreq_save_attachments($id, 'submit', $attachments, (int) $user['id']);
 
     qly_log($user, '提交需求', $reqNo, '提交需求：' . trim($title) . '（模块：' . $module['name'] . '，优先级：' . $priority . '，附件 ' . count((array) $attachments) . ' 个）');
-    qly_notify(
-        qly_notify_user_ids_by_roles([QLY_ROLE_COMMITTEE, QLY_ROLE_ADMIN]),
-        '新需求进入评审池',
-        '【' . $module['name'] . '】' . trim($title),
-        '/dev/reqs/' . $id,
-        (int) $user['id']
-    );
+    // 说明：新需求进入评审池不再给评审委员发站内消息（评审池列表即可看到），此处仅保留操作日志。
     qly_ok(['id' => $id, 'reqNo' => $reqNo], '需求已提交，等待评审委员会评审');
 }
 

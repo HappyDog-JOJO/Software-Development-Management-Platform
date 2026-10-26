@@ -107,6 +107,10 @@ export function logTypeClass(type: string): string {
       return 'pill pill--green'
     case '需求撤回':
       return 'pill pill--red'
+    case '提交输单':
+      return 'pill pill--green'
+    case '输单维护':
+      return 'pill pill--yellow'
     default:
       return 'pill pill--grey'
   }
@@ -154,4 +158,6 @@ export const LOG_TYPES = [
   '部门维护',
   '字典维护',
   '导出',
+  '提交输单',
+  '输单维护',
 ]

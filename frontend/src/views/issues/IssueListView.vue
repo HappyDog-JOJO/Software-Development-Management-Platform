@@ -17,12 +17,13 @@ import { useDictStore } from '@/stores/dict'
 import { useIssueStore } from '@/stores/issue'
 import { exportIssueLog } from '@/api/log'
 import { deleteIssue, fetchHandlers, updateIssueStatus, type HandlerOption } from '@/api/issue'
-import { canExport, canHandle } from '@/constants/user'
+import { canDevReq, canExport, canHandle, isAdmin as isAdminRole } from '@/constants/user'
 import { ISSUE_QUICK_RANGES, STATUS_OPTIONS } from '@/constants/issue'
 import { fileStamp, fmtDateTime, quickRange } from '@/utils/format'
 import IssueStatusTag from '@/components/IssueStatusTag.vue'
 import ValueTag from '@/components/ValueTag.vue'
 import HandleDialog from '@/components/HandleDialog.vue'
+import IssuePingcodeSyncDialog from '@/components/IssuePingcodeSyncDialog.vue'
 import EmptyIllustration from '@/components/illustrations/EmptyIllustration.vue'
 import ColumnConfig from '@/components/ColumnConfig.vue'
 import type { Issue, IssueQuery } from '@/types'
@@ -72,6 +73,7 @@ const ISSUE_COL_DEFS: Record<string, ColDef> = {
   handlerName: { label: '处理人', colwKey: 'handlerName', width: 100 },
   handledAt: { label: '处理时间', colwKey: 'handledAt', width: 158, sortable: true, align: 'center' },
   handleRemark: { label: '处理备注', colwKey: '处理备注', width: 240, overflow: true },
+  pingcodeTask: { label: 'PingCode', colwKey: 'pingcodeTask', width: 140, align: 'center' },
 }
 
 /** 按“列配置”的顺序与显隐生成实际渲染的列（顺序调整才能真正作用到表格） */
@@ -230,6 +232,34 @@ function onAction(row: Issue): void {
   openHandle(row)
 }
 
+/* ==================== PingCode 同步（开发工程师/管理员） ==================== */
+
+/** 可同步到 PingCode 的角色（与开发管理一致：开发工程师 / 管理员） */
+const canSyncPingcode = computed(() => canDevReq(auth.roles) || isAdminRole(auth.roles))
+
+/** 同步弹窗：只支持单条（在操作栏逐条发起，不提供批量） */
+const syncDialogVisible = ref(false)
+const syncIds = ref<number[]>([])
+
+/** 单条同步：带上该问题的标题/描述作为默认值 */
+const syncDefaultTitle = ref('')
+const syncDefaultDescription = ref('')
+
+function onSyncOne(row: Issue): void {
+  if (row.pingcodeTaskId) {
+    ElMessage.info('该问题已同步到 PingCode')
+    return
+  }
+  syncIds.value = [row.id]
+  syncDefaultTitle.value = `【售后问题】${row.issueNo}`
+  syncDefaultDescription.value = row.description
+  syncDialogVisible.value = true
+}
+
+function onSyncDone(): void {
+  void load()
+}
+
 /** 删除问题：仅管理员可见/可用；服务端同样强制校验角色 */
 async function onDelete(row: Issue): Promise<void> {
   await ElMessageBox.confirm(
@@ -319,6 +349,7 @@ onMounted(async () => {
     { key: 'handlerName', label: '处理人' },
     { key: 'handledAt', label: '处理时间' },
     { key: 'handleRemark', label: '处理备注' },
+    { key: 'pingcodeTask', label: 'PingCode' },
     { key: '操作', label: '操作', fixed: true },
   ])
   await Promise.all([dict.load(), deptStore.load(), loadHandlers(), load()])
@@ -599,10 +630,31 @@ watch(
                 <span v-if="row.handleRemark" class="cell-ellipsis">{{ row.handleRemark }}</span>
                 <span v-else class="text-placeholder">—</span>
               </template>
+
+              <!-- PingCode 同步状态：已同步显示工作项编号链接，未同步显示「未同步」 -->
+              <template v-else-if="c.key === 'pingcodeTask'">
+                <el-tooltip
+                  v-if="row.pingcodeTaskId"
+                  :content="`同步时间：${row.pingcodeSyncedAt ? fmtDateTime(row.pingcodeSyncedAt) : '—'}${row.pingcodeAssigneeName ? `｜BUG 处理人：${row.pingcodeAssigneeName}` : ''}`"
+                  placement="top"
+                  effect="light"
+                  :show-after="200"
+                >
+                  <a
+                    v-if="row.pingcodeTaskUrl"
+                    class="cell-code cell-code--link cell-nowrap"
+                    :href="row.pingcodeTaskUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >{{ row.pingcodeTaskNo || '查看任务' }}</a>
+                  <span v-else class="cell-nowrap">{{ row.pingcodeTaskNo || '已同步' }}</span>
+                </el-tooltip>
+                <span v-else class="text-placeholder">未同步</span>
+              </template>
             </template>
           </el-table-column>
 
-          <el-table-column label="操作" :width="colw.bind('操作', { width: 220 }).width" fixed="right" align="center">
+          <el-table-column label="操作" :width="colw.bind('操作', { width: 240 }).width" fixed="right" align="center">
             <template #default="{ row }">
               <div class="cell--actions">
                 <el-button
@@ -613,6 +665,16 @@ watch(
                   @click="onAction(row)"
                 >
                   {{ actionLabel(row) }}
+                </el-button>
+                <!-- 同步到 PingCode：仅开发工程师/管理员；已同步的不再显示（编号由「PingCode」列承载） -->
+                <el-button
+                  v-if="canSyncPingcode && !row.pingcodeTaskId"
+                  link
+                  type="primary"
+                  class="btn-action-sync"
+                  @click="onSyncOne(row)"
+                >
+                  同步到 PingCode
                 </el-button>
                 <el-button
                   v-if="auth.isAdmin"
@@ -644,6 +706,15 @@ watch(
     </div>
 
     <HandleDialog v-model="handleVisible" :issue="currentIssue" @saved="onHandled" />
+
+    <!-- 同步到 PingCode：仅单条（在操作栏逐条发起） -->
+    <IssuePingcodeSyncDialog
+      v-model="syncDialogVisible"
+      :ids="syncIds"
+      :default-title="syncDefaultTitle"
+      :default-description="syncDefaultDescription"
+      @done="onSyncDone"
+    />
   </div>
 </template>
 
@@ -777,6 +848,22 @@ watch(
 .btn-action-detail {
   justify-content: center;
   padding: 0;
+}
+
+/* 同步到 PingCode：文字按钮，不给固定宽，让操作列自然适配 */
+.btn-action-sync {
+  justify-content: center;
+  padding: 0;
+  white-space: nowrap;
+}
+
+/* 操作列变宽后，保持按钮不换行挤压 */
+.cell--actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 4px;
 }
 
 /* 描述列：文本截断 + 附件数内联（避免占一整列） */

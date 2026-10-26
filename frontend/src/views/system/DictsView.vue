@@ -28,6 +28,11 @@ const tabs: Array<{ key: TabKey; label: string; tip: string }> = [
   { key: 'value', label: '问题价值等级', tip: '默认三项必须预置，顺序即价值高低；至少保留一项启用。' },
   { key: 'handle', label: '处理情况', tip: '与问题状态联动：所选处理情况即为问题状态（未处理/处理中/已处理/已驳回）。' },
   { key: 'category', label: '问题分类', tip: '售后处理问题时选择，用于问题归类与列表筛选；停用项不再出现在新的处理表单中，历史数据正常展示。' },
+  { key: 'loss_type', label: '输单类型', tip: '销售分析「输单登记」选择，用于统计丢单主要原因；停用项不再出现在新表单中，历史数据正常展示。' },
+  { key: 'loss_stage', label: '丢单阶段', tip: '丢单发生在哪个销售环节（线索 → 合同），用于定位流程卡点。' },
+  { key: 'industry', label: '所属行业', tip: '客户所属行业，用于分析不同行业的流失情况。' },
+  { key: 'company_scale', label: '企业规模', tip: '客户企业规模分档，用于判断大客户与小微客户的丢单差异。' },
+  { key: 'budget_match', label: '预算匹配', tip: '报价与客户预算的匹配情况（符合预算 / 报价超预算 / 预算未明确）。' },
   { key: 'logo', label: '灯牌 logo', tip: '配置问题提交页右侧灯牌下方的小动物。非必填：不上传时使用默认造型；上传后全站生效。' },
 ]
 
