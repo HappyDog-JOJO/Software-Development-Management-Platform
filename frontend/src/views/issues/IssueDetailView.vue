@@ -3,13 +3,15 @@
  * 问题详情页。
  * 上半部分：问题信息卡 + 附件列表（可预览/下载）
  * 下半部分：处理记录时间线（最新在上）；无记录显示空态
+ * 时间线上方提供「添加备注」：任何能看到该问题的人都能随时补一句（答疑、跟进结论、沟通留痕），
+ * 与售后处理记录混排展示，用绿色「备注」标签 + 左侧竖线区分。
  * 操作区（售后/管理员）：复用 HandleDialog，提交后原地刷新时间线
  * 侧边折叠区：该问题的操作日志（所有登录用户可见，只读）
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { deleteIssue, fetchHandleRecords, getIssue } from '@/api/issue'
+import { appendIssue, deleteIssue, fetchHandleRecords, getIssue } from '@/api/issue'
 import { useAuthStore } from '@/stores/auth'
 import { canHandle } from '@/constants/user'
 import { fmtDateTime, fmtSize, isImage } from '@/utils/format'
@@ -105,6 +107,27 @@ async function load(): Promise<void> {
     }
   } finally {
     loading.value = false
+  }
+}
+
+/* —— 处理记录里的备注（随时可加；提交人、销售经理、售后、管理员都能留） —— */
+const noteText = ref('')
+const noteSubmitting = ref(false)
+
+async function onAddNote(): Promise<void> {
+  const text = noteText.value.trim()
+  if (!text) {
+    ElMessage.warning('请先写点内容')
+    return
+  }
+  noteSubmitting.value = true
+  try {
+    await appendIssue(issueId.value, text)
+    noteText.value = ''
+    ElMessage.success('备注已添加')
+    await load()
+  } finally {
+    noteSubmitting.value = false
   }
 }
 
@@ -252,7 +275,24 @@ watch(issueId, (val, old) => {
       <div class="moon-card">
         <div class="section-title">
           处理记录
-          <span class="section-title__hint">同一问题可多次处理，最新一条为当前结论</span>
+          <span class="section-title__hint">同一问题可多次处理，最新一条为当前结论；任何人可随时添加备注</span>
+        </div>
+
+        <!-- 添加备注：答疑、跟进结论、沟通记录都可以写，给所有能看该问题的人留痕 -->
+        <div class="note-box">
+          <el-input
+            v-model="noteText"
+            type="textarea"
+            :rows="3"
+            maxlength="1000"
+            show-word-limit
+            placeholder="补充说明、跟进结论、沟通记录都可以写在这里（如：客户已确认按方案 A 处理，明天下午上线）"
+            @keydown.ctrl.enter="onAddNote"
+          />
+          <div class="note-box__actions">
+            <span class="note-box__tip">Ctrl + Enter 快速发送；备注会出现在下方时间线，提出人与售后都能看到</span>
+            <el-button type="primary" :loading="noteSubmitting" @click="onAddNote">添加备注</el-button>
+          </div>
         </div>
 
         <EmptyIllustration
@@ -280,12 +320,12 @@ watch(issueId, (val, old) => {
               <div class="record__body">{{ item.content }}</div>
             </div>
 
-            <!-- 提出人：补充说明 -->
-            <div v-else-if="item.kind === 'append'" class="record record--submitter">
+            <!-- 备注（任何人随时添加；历史数据里的「补充说明」也走这里） -->
+            <div v-else-if="item.kind === 'append'" class="record record--note">
               <div class="record__head">
                 <span class="num-strong">{{ item.authorName }}</span>
                 <RoleTag :role="item.authorRole" />
-                <span class="pill pill--pink">补充说明</span>
+                <span class="pill pill--green">备注</span>
               </div>
               <div class="record__body">{{ item.content }}</div>
             </div>
@@ -573,10 +613,39 @@ watch(issueId, (val, old) => {
   border-color: rgba(124, 140, 228, 0.24);
 }
 
-/* 提出人操作（提交 / 补充说明）：与售后处理记录区分，用左线+虚底 */
+/* 提出人首次提交：与售后处理记录区分，用左线+虚底 */
 .record--submitter {
   background: var(--color-bg-sub);
   border-left: 3px solid var(--color-accent-pink);
+}
+
+/* 备注（人工留言）：绿色左线，与售后处理记录、提出人提交区分开 */
+.record--note {
+  background: rgba(122, 196, 152, 0.1);
+  border-left: 3px solid rgba(122, 196, 152, 0.65);
+}
+
+/* 添加备注输入区 */
+.note-box {
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: var(--radius-control);
+  background: var(--color-bg-sub);
+  border: 1px dashed rgba(124, 140, 228, 0.3);
+}
+
+.note-box__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.note-box__tip {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--color-text-secondary);
 }
 
 /* 日志折叠区已移除，相关样式不再需要 */
