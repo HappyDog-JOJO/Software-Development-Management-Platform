@@ -72,6 +72,18 @@ export function battlePublishDevRequest(ids: number[]): Promise<{ affected: numb
   return http.post<{ affected: number; skipped: number }>('/api.php?r=devreqs/battle-publish', { ids })
 }
 
+/** 相邻需求（详情页「上一条 / 下一条」）：同状态 + 同可见范围内的前后一条 */
+export interface DevNeighbors {
+  index: number
+  total: number
+  prev: { id: number; reqNo: string; title: string; status: string } | null
+  next: { id: number; reqNo: string; title: string; status: string } | null
+}
+
+export function fetchDevRequestNeighbors(id: number, mine = false): Promise<DevNeighbors> {
+  return http.get<DevNeighbors>('/api.php?r=devreqs/neighbors', mine ? { id, mine: '1' } : { id }, true)
+}
+
 /** 添加流转备注（能看该需求的人都可以留言，纯沟通留痕） */
 export function addDevRequestComment(id: number, content: string): Promise<{ id: number }> {
   return http.post<{ id: number }>('/api.php?r=devreqs/comment', { id, content })

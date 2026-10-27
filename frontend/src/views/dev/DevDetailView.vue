@@ -1,14 +1,15 @@
 <script setup lang="ts">
 /**
  * 需求详情页：环节步骤条 + 需求信息卡 + 流转时间线（样式与布局对齐问题详情页）。
- * - 顶部工具栏：返回列表 + 操作区（DevRequestActions 按角色与状态动态渲染）
+ * - 顶部工具栏：上一条/下一条 + 返回列表 + 操作区（DevRequestActions 按角色与状态动态渲染）
+ *   上一条/下一条按「同状态 + 同可见范围」的顺序翻（评审池是提交正序，其它环节最新在前）
  * - 信息卡：头部标识区（编号/标签/时间戳）+ 左（元信息列表）+ 右（描述/附件）
  * - 时间线：系统流转记录 + 字段变更（改前→改后对比）+ 人工备注，最新在上
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { addDevRequestComment, getDevRequest } from '@/api/devreq'
+import { addDevRequestComment, fetchDevRequestNeighbors, getDevRequest, type DevNeighbors } from '@/api/devreq'
 import { DEV_PRIORITY_TAG, DEV_STAGES, DEV_STATUS_TAG, devStageIndex, type DevTagType } from '@/constants/devreq'
 import { logTypeClass } from '@/constants/issue'
 import DevRequestActions from '@/components/DevRequestActions.vue'
@@ -23,6 +24,8 @@ const router = useRouter()
 
 const loading = ref(false)
 const detail = ref<DevRequestDetail | null>(null)
+/** 上一条 / 下一条（同状态相邻需求） */
+const neighbors = ref<DevNeighbors | null>(null)
 
 const reqId = computed(() => Number(route.params.id) || 0)
 
@@ -52,11 +55,21 @@ async function load(): Promise<void> {
   loading.value = true
   try {
     detail.value = await getDevRequest(reqId.value)
+    // 相邻需求：失败不影响详情（静默）
+    neighbors.value = await fetchDevRequestNeighbors(reqId.value).catch(() => null)
   } catch {
     detail.value = null
+    neighbors.value = null
   } finally {
     loading.value = false
   }
+}
+
+/** 跳到上一条 / 下一条（同一状态内的相邻需求） */
+function goNeighbor(target: 'prev' | 'next'): void {
+  const hit = neighbors.value?.[target]
+  if (!hit) return
+  void router.push('/dev/reqs/' + hit.id)
 }
 
 /* —— 附件按场景分组 —— */
@@ -179,6 +192,31 @@ watch(reqId, load)
   <div class="page">
     <!-- 顶部工具栏：返回列表 + 操作区（与问题详情页一致） -->
     <div class="page__actions page__actions--toolbar">
+      <!-- 上一条 / 下一条：按当前所在环节的顺序翻（评审池=提交正序，其它=最新在前） -->
+      <el-button-group v-if="detail" class="neighbor-group">
+        <el-tooltip
+          :content="neighbors?.prev ? '上一条：' + neighbors.prev.title : '已经是第一条'"
+          placement="bottom"
+          effect="light"
+          :show-after="200"
+        >
+          <el-button :disabled="!neighbors?.prev" @click="goNeighbor('prev')">
+            <el-icon><ArrowLeft /></el-icon>上一条
+          </el-button>
+        </el-tooltip>
+        <el-tooltip
+          :content="neighbors?.next ? '下一条：' + neighbors.next.title : '已经是最后一条'"
+          placement="bottom"
+          effect="light"
+          :show-after="200"
+        >
+          <el-button :disabled="!neighbors?.next" @click="goNeighbor('next')">
+            下一条<el-icon><ArrowRight /></el-icon>
+          </el-button>
+        </el-tooltip>
+      </el-button-group>
+      <span v-if="neighbors" class="neighbor-group__pos">第 {{ neighbors.index }} / {{ neighbors.total }} 条</span>
+
       <el-button @click="router.back()">返回列表</el-button>
       <DevRequestActions v-if="detail" :req="detail" @refresh="load" />
     </div>
@@ -397,6 +435,18 @@ watch(reqId, load)
 </template>
 
 <style scoped>
+/* 上一条 / 下一条 + 位置提示 */
+.neighbor-group {
+  margin-right: 4px;
+}
+
+.neighbor-group__pos {
+  margin-right: 12px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 /* 环节进度轨道：小圆点 + 细连线（与页面 pill 体系同风格）
  * 已过的环节实心主色圆点 + 主色连线；当前环节圆点带光晕；未到环节灰色空心点 */
 .steps-card {

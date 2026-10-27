@@ -230,6 +230,70 @@ function qly_api_devreqs_list(): void
     ]);
 }
 
+/**
+ * 相邻需求（详情页「上一条 / 下一条」用）。
+ * 口径与列表保持一致：同一状态集合内，评审池按提交时间正序，其它环节按提交时间倒序；
+ * 数据可见范围沿用 qly_devreq_scope_where，避免「翻到看不见的需求」。
+ * 可选 mine=1：只在「我提交的」范围内翻页。
+ */
+function qly_api_devreqs_neighbors(): void
+{
+    $user = qly_auth_user();
+    $id = qly_input_int('id', 0);
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
+    if (!$row) {
+        qly_fail('需求不存在');
+    }
+    if (!qly_devreq_visible($user, $row)) {
+        qly_forbidden('该需求不在您的可见范围');
+    }
+
+    $status = (string) $row['status'];
+    // 评审池是待办队列（先来先审）→ 正序；其它环节最新在前（与列表默认一致）
+    $asc = $status === '评审池';
+
+    [$scopeWhere, $scopeParams] = qly_devreq_scope_where($user, 'i');
+    $where = ' WHERE i.status = :st' . $scopeWhere;
+    $params = array_merge([':st' => $status], $scopeParams);
+    if ((string) qly_input('mine', '') === '1') {
+        $where .= ' AND i.submitter_id = :mine_uid';
+        $params[':mine_uid'] = (int) $user['id'];
+    }
+
+    $createdAt = (string) $row['created_at'];
+    // 严格小/大于当前这条的，才算「排在它前面 / 后面」（同秒用 id 兜底，顺序稳定）
+    // 注意：PDO 原生预处理不接受多余占位符，两组条件各用各的参数名
+    $lessCond = $asc
+        ? '(i.created_at < :lo_t OR (i.created_at = :lo_t2 AND i.id < :lo_id))'
+        : '(i.created_at > :lo_t OR (i.created_at = :lo_t2 AND i.id > :lo_id))';
+    $moreCond = $asc
+        ? '(i.created_at > :hi_t OR (i.created_at = :hi_t2 AND i.id > :hi_id))'
+        : '(i.created_at < :hi_t OR (i.created_at = :hi_t2 AND i.id < :hi_id))';
+    $lessParams = [':lo_t' => $createdAt, ':lo_t2' => $createdAt, ':lo_id' => $id];
+    $moreParams = [':hi_t' => $createdAt, ':hi_t2' => $createdAt, ':hi_id' => $id];
+    $sortAsc = $asc ? 'ASC' : 'DESC';
+    $sortDesc = $asc ? 'DESC' : 'ASC';
+
+    $pick = static function (string $cond, array $condParams, string $sort) use ($where, $params): ?array {
+        $r = qly_one(
+            'SELECT i.id, i.req_no, i.title, i.status' . qly_devreq_base_from() . $where . ' AND ' . $cond
+            . ' ORDER BY i.created_at ' . $sort . ', i.id ' . $sort . ' LIMIT 1',
+            array_merge($params, $condParams)
+        );
+        return $r ? ['id' => (int) $r['id'], 'reqNo' => (string) $r['req_no'], 'title' => (string) $r['title'], 'status' => (string) $r['status']] : null;
+    };
+
+    $total = (int) qly_val('SELECT COUNT(*)' . qly_devreq_base_from() . $where, $params);
+    $beforeCount = (int) qly_val('SELECT COUNT(*)' . qly_devreq_base_from() . $where . ' AND ' . $lessCond, array_merge($params, $lessParams));
+
+    qly_ok([
+        'index' => $beforeCount + 1,
+        'total' => $total,
+        'prev' => $pick($lessCond, $lessParams, $sortDesc),
+        'next' => $pick($moreCond, $moreParams, $sortAsc),
+    ]);
+}
+
 /** 需求详情：主任务 + 需求级附件（按场景）+ 时间线日志 */
 function qly_api_devreqs_detail(): void
 {

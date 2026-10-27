@@ -117,6 +117,8 @@ $routes = [
     // 需求管理模块（方案见 docs/需求管理模块-需求方案.md）
     'devreqs' => [['GET'], 'devreqs.php', 'qly_api_devreqs_list'],
     'devreqs/detail' => [['GET'], 'devreqs.php', 'qly_api_devreqs_detail'],
+    // 详情页「上一条 / 下一条」：同状态 + 同可见范围内的相邻需求
+    'devreqs/neighbors' => [['GET'], 'devreqs.php', 'qly_api_devreqs_neighbors'],
     'devreqs/create' => [['POST'], 'devreqs.php', 'qly_api_devreqs_create'],
     'devreqs/update' => [['POST'], 'devreqs.php', 'qly_api_devreqs_update'],
     'devreqs/delete' => [['POST'], 'devreqs.php', 'qly_api_devreqs_delete'],
