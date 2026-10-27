@@ -113,14 +113,16 @@ function resetDefaults(): void {
 async function loadOptions(): Promise<void> {
   loading.value = true
   try {
-    const res = await fetchIssuePingcodeOptions()
+    const res = await fetchIssuePingcodeOptions(true)
     options.value = res
     priorities.value = res.priorities
     states.value = res.states
     members.value = res.members
     resetDefaults()
-  } catch {
-    ElMessage.error('拉取 PingCode 字段失败，请检查配置或稍后重试')
+  } catch (e) {
+    // 后端已经给出具体原因（连接超时 / 未配置 / 未找到项目等），这里只提示一次
+    const msg = (e as Error)?.message || '拉取 PingCode 字段失败，请稍后重试'
+    ElMessage.error(msg)
     visible.value = false
   } finally {
     loading.value = false

@@ -41,9 +41,12 @@ export interface IssuePingcodeOptions {
   bugDuty: { userId: number; userName: string; position: number; memberId: string } | null
 }
 
-/** 拉取问题同步弹窗选项（每次打开都取最新，保证顺位准确） */
-export function fetchIssuePingcodeOptions(): Promise<IssuePingcodeOptions> {
-  return http.get<IssuePingcodeOptions>('/api.php?r=issues/pingcode-options')
+/**
+ * 拉取问题同步弹窗选项（每次打开都取最新，保证顺位准确）。
+ * silent=true 时不弹通用错误提示，由调用方统一展示一次（后端会返回具体原因）。
+ */
+export function fetchIssuePingcodeOptions(silent = false): Promise<IssuePingcodeOptions> {
+  return http.get<IssuePingcodeOptions>('/api.php?r=issues/pingcode-options', undefined, silent)
 }
 
 /** 搜索 PingCode 标签 */

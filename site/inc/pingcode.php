@@ -63,7 +63,8 @@ function qly_pingcode_cached_token(): string
     }
     $token = (string) ($data['access_token'] ?? '');
     $expiresAt = (int) ($data['expires_at'] ?? 0);
-    if ($token === '' || $expiresAt - 300 < time()) {
+    // 过期判断 + 异常值兜底（超过 2 天的"有效期"视为脏缓存，直接作废重取）
+    if ($token === '' || $expiresAt - 300 < time() || $expiresAt > time() + 172800) {
         return '';
     }
     return $token;
@@ -121,7 +122,16 @@ function qly_pingcode_http(string $method, string $path, ?array $body, ?string $
     $err = curl_error($ch);
     curl_close($ch);
     if ($text === false) {
-        throw new RuntimeException('调用 PingCode 失败：' . ($err !== '' ? $err : '网络错误'));
+        // 偶发连接超时（PingCode 网关抖动）：重试一次再判定失败
+        usleep(150000);
+        $ch = qly_pingcode_curl_init($method, $path, $body, $token, $query);
+        $text = curl_exec($ch);
+        $status = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+        curl_close($ch);
+    }
+    if ($text === false) {
+        throw new RuntimeException('PingCode 连接失败（HTTP 0，未收到响应）' . ($err !== '' ? '：' . $err : '：网络超时或被拒绝'));
     }
     $json = json_decode((string) $text, true);
     return [$status, is_array($json) ? $json : null, (string) $text];
@@ -195,7 +205,13 @@ function qly_pingcode_api_multi(array $reqs): array
             $text = curl_multi_getcontent($ch);
             $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
             $json = json_decode((string) $text, true);
-            $out[$i] = ['status' => $code, 'json' => is_array($json) ? $json : null];
+            // 记录 curl 层原因：status=0 时只有它能说明是超时、DNS 还是被拒
+            $out[$i] = [
+                'status' => $code,
+                'json' => is_array($json) ? $json : null,
+                'errno' => curl_errno($ch),
+                'error' => curl_error($ch),
+            ];
             curl_multi_remove_handle($mh, $ch);
             curl_close($ch);
         }
@@ -217,11 +233,31 @@ function qly_pingcode_api_multi(array $reqs): array
             $results[$i] = $r;
         }
     }
+
+    // 传输层失败（status=0：连接超时/被拒）也重试一轮：
+    // PingCode 网关偶发抖动，10s 连接超时直接把整个「同步」弹窗打死，体验太差。
+    $retryNet = [];
+    foreach ($results as $i => $r) {
+        if ((int) ($r['status'] ?? 0) === 0) {
+            $retryNet[$i] = $reqs[$i];
+        }
+    }
+    if ($retryNet) {
+        usleep(150000);
+        foreach ($run($retryNet, $token) as $i => $r) {
+            $results[$i] = $r;
+        }
+    }
     $out = [];
     foreach ($results as $i => $r) {
         $status = (int) ($r['status'] ?? 0);
         $json = $r['json'];
         if ($status < 200 || $status >= 300 || !is_array($json)) {
+            if ($status === 0) {
+                $detail = trim((string) ($r['error'] ?? ''));
+                throw new RuntimeException('PingCode 连接失败（HTTP 0，未收到响应）'
+                    . ($detail !== '' ? '：' . $detail : '：网络超时或被拒绝'));
+            }
             $msg = is_array($json) ? (string) ($json['message'] ?? '') : '';
             throw new RuntimeException('PingCode 接口调用失败（HTTP ' . $status . '）' . ($msg !== '' ? '：' . $msg : ''));
         }
@@ -285,7 +321,13 @@ function qly_pingcode_token(bool $forceRefresh = false): string
         $msg = is_array($json) ? (string) ($json['message'] ?? '') : '';
         throw new RuntimeException('获取 PingCode 授权失败' . ($msg !== '' ? '：' . $msg : '（请检查 PINGCODE_CLIENT_ID / CLIENT_SECRET 配置）'));
     }
-    qly_pingcode_save_token($token, (int) ($json['expires_in'] ?? 7200));
+    // expires_in 兜底：异常值（如被写成毫秒/纳秒）会算出几十年后的过期时间，
+    // 导致缓存 token 永不刷新。这里统一收敛到合理区间。
+    $expiresIn = (int) ($json['expires_in'] ?? 7200);
+    if ($expiresIn < 60 || $expiresIn > 172800) {
+        $expiresIn = 7200;
+    }
+    qly_pingcode_save_token($token, $expiresIn);
     return $token;
 }
 
@@ -413,11 +455,24 @@ function qly_pingcode_task_options(string $projectId, string $typeId): array
     if ($cached !== null) {
         return $cached;
     }
-    [$p, $s, $m] = array_values(qly_pingcode_api_multi([
-        ['method' => 'GET', 'path' => '/v1/project/work_item/priorities', 'query' => ['project_id' => $projectId]],
-        ['method' => 'GET', 'path' => '/v1/project/work_item/states', 'query' => ['project_id' => $projectId, 'workitem_type_id' => $typeId]],
-        ['method' => 'GET', 'path' => '/v1/project/projects/' . rawurlencode($projectId) . '/members', 'query' => []],
-    ]));
+    try {
+        [$p, $s, $m] = array_values(qly_pingcode_api_multi([
+            ['method' => 'GET', 'path' => '/v1/project/work_item/priorities', 'query' => ['project_id' => $projectId]],
+            ['method' => 'GET', 'path' => '/v1/project/work_item/states', 'query' => ['project_id' => $projectId, 'workitem_type_id' => $typeId]],
+            ['method' => 'GET', 'path' => '/v1/project/projects/' . rawurlencode($projectId) . '/members', 'query' => []],
+        ]));
+    } catch (Throwable $e) {
+        // 网络异常时用「已过期的缓存」兜底：优先级/状态/成员基本不变，
+        // 宁可展示旧选项让人能继续建单，也不要整个弹窗打不开。
+        $staleFile = qly_pingcode_cache_file($cacheKey);
+        if (is_file($staleFile)) {
+            $stale = json_decode((string) @file_get_contents($staleFile), true);
+            if (is_array($stale['value'] ?? null) && is_array($stale['value'])) {
+                return $stale['value'];
+            }
+        }
+        throw $e;
+    }
 
     $priorities = [];
     foreach (($p['values'] ?? []) as $it) {
@@ -455,7 +510,8 @@ function qly_pingcode_task_options(string $projectId, string $typeId): array
         }
     }
     $result = ['priorities' => $priorities, 'states' => $states, 'members' => $members];
-    qly_pingcode_cache_put($cacheKey, $result, 600);
+    // 缓存 1 小时：优先级/状态/成员几乎不变，没必要每 10 分钟打一次外网
+    qly_pingcode_cache_put($cacheKey, $result, 3600);
     return $result;
 }
 
