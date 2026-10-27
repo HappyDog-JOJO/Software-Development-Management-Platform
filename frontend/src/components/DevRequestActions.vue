@@ -2,7 +2,7 @@
 /**
  * 需求操作组件：按「角色 + 需求状态」动态渲染操作按钮与弹窗。
  * 列表页与详情页共用；操作成功后 emit('refresh') 让父级重新拉数据。
- * 覆盖动作：评审通过（备注选填）/ 待定（备注必填，暂留评审池）/ 驳回（备注必填，作废终态）、
+ * 覆盖动作：评审通过（备注选填，可写验收标准/范围说明）/ 待定（备注必填，暂留评审池）/ 驳回（备注必填，作废终态）、
  *           开发（需求池 → 开发中心）、发布上线（开发中心，开发工程师/管理员）、
  *           修改/删除（提交人本人或管理员，仅评审池）。
  * link：列表内传 true → 文字按钮（与各列表页操作列一致）；详情页不传 → 实心按钮。
@@ -101,22 +101,6 @@ const hasActions = computed(
 
 /* —— 简单确认类动作 —— */
 const busy = ref(false)
-
-async function onReviewPass(): Promise<void> {
-  await ElMessageBox.confirm(`确定通过需求「${props.req.title}」的评审吗？通过后进入需求池。`, '评审通过', {
-    confirmButtonText: '通过',
-    cancelButtonText: '取消',
-    type: 'warning',
-  })
-  busy.value = true
-  try {
-    await reviewDevRequest(props.req.id, '通过')
-    ElMessage.success('评审通过，需求已进入需求池')
-    emit('refresh')
-  } finally {
-    busy.value = false
-  }
-}
 
 async function onDevelop(): Promise<void> {
   await ElMessageBox.confirm(
@@ -229,12 +213,14 @@ async function onEditSubmit(): Promise<void> {
   }
 }
 
-/* —— 驳回 / 待定（评审池；备注均必填。驳回=作废终态，待定=暂留评审池可再改判） —— */
+/* —— 评审弹窗：通过（备注选填）/ 待定 / 驳回（后两者备注必填）
+ *    通过也要能写备注：验收标准、范围说明、需要开发注意的点，都记在 review_comment 上，
+ *    详情页「评审意见」会展示，提交人与开发也能看到。 —— */
 const rejectForm = reactive({ comment: '', attachments: [] as Attachment[] })
-/** 当前弹窗是评审驳回还是评审待定 */
-const rejectMode = ref<'reject' | 'pending'>('reject')
+/** 当前弹窗是评审通过 / 评审驳回 / 评审待定 */
+const rejectMode = ref<'pass' | 'reject' | 'pending'>('reject')
 
-function openReject(mode: 'reject' | 'pending'): void {
+function openReview(mode: 'pass' | 'reject' | 'pending'): void {
   rejectMode.value = mode
   rejectForm.comment = ''
   rejectForm.attachments = []
@@ -252,13 +238,17 @@ function onDialogSubmit(): void {
 }
 
 async function onRejectSubmit(): Promise<void> {
-  if (!rejectForm.comment.trim()) {
+  // 通过：备注选填；待定/驳回：备注必填
+  if (rejectMode.value !== 'pass' && !rejectForm.comment.trim()) {
     ElMessage.warning(rejectMode.value === 'pending' ? '请填写待定备注' : '请填写驳回原因')
     return
   }
   submitting.value = true
   try {
-    if (rejectMode.value === 'pending') {
+    if (rejectMode.value === 'pass') {
+      await reviewDevRequest(props.req.id, '通过', { comment: rejectForm.comment.trim() })
+      ElMessage.success('评审通过，需求已进入需求池')
+    } else if (rejectMode.value === 'pending') {
       await reviewDevRequest(props.req.id, '待定', { comment: rejectForm.comment.trim() })
       ElMessage.success('已标记待定，需求保留在评审池')
     } else {
@@ -340,9 +330,9 @@ const syncDefaultDescription = computed(() => {
   <div v-if="hasActions" class="dev-actions" :class="{ 'dev-actions--link': link }">
     <!-- 评审池：通过（备注选填）/ 待定（备注必填，暂留评审池）/ 驳回（备注必填，作废） -->
     <template v-if="showReview">
-      <el-button v-bind="btnPrimary" :loading="busy" @click="onReviewPass">评审通过</el-button>
-      <el-button v-bind="btnPrimary" @click="openReject('pending')">待定</el-button>
-      <el-button v-bind="btnDanger" @click="openReject('reject')">驳回</el-button>
+      <el-button v-bind="btnPrimary" @click="openReview('pass')">评审通过</el-button>
+      <el-button v-bind="btnPrimary" @click="openReview('pending')">待定</el-button>
+      <el-button v-bind="btnDanger" @click="openReview('reject')">驳回</el-button>
     </template>
 
     <!-- 需求池：开发（开发工程师/管理员；点击直接进入开发中心） -->
@@ -363,6 +353,7 @@ const syncDefaultDescription = computed(() => {
       v-model="dialogVisible"
       :title="
         dialogKind === 'edit' ? '修改需求（评审前）'
+        : rejectMode === 'pass' ? '评审通过'
         : rejectMode === 'pending' ? '评审待定（暂留评审池）'
         : '评审驳回（作废）'
       "
@@ -406,20 +397,29 @@ const syncDefaultDescription = computed(() => {
       <!-- 驳回 / 待定表单 -->
       <template v-else>
         <el-alert
-          type="warning"
+          :type="rejectMode === 'pass' ? 'info' : 'warning'"
           :closable="false"
-          :title="rejectMode === 'pending'
-            ? '待定的需求将保留在评审池并标记「待定」，之后仍可评审通过或驳回。'
-            : '评审驳回后该需求将直接作废（终态），提交人如仍需要请重新提交新需求。'"
+          :title="rejectMode === 'pass'
+            ? '通过后需求进入需求池，等待开发工程师认领开发。备注选填，会记入需求详情的「评审意见」，提交人与开发都能看到。'
+            : rejectMode === 'pending'
+              ? '待定的需求将保留在评审池并标记「待定」，之后仍可评审通过或驳回。'
+              : '评审驳回后该需求将直接作废（终态），提交人如仍需要请重新提交新需求。'"
           style="margin-bottom: 12px"
         />
+        <div class="comment-label">
+          {{ rejectMode === 'pass' ? '评审备注（选填）' : rejectMode === 'pending' ? '待定备注（必填）' : '驳回原因（必填）' }}
+        </div>
         <el-input
           v-model="rejectForm.comment"
           type="textarea"
           :rows="4"
           maxlength="500"
           show-word-limit
-          :placeholder="rejectMode === 'pending' ? '请填写待定备注（必填）：为什么暂缓、需要补充什么信息' : '请填写驳回原因，提交人会看到'"
+          :placeholder="rejectMode === 'pass'
+            ? '选填：验收标准、实现范围、需要注意的点（如：需支持同一工单多道投料工序）'
+            : rejectMode === 'pending'
+              ? '请填写待定备注（必填）：为什么暂缓、需要补充什么信息'
+              : '请填写驳回原因，提交人会看到'"
         />
         <div v-if="rejectMode === 'reject'" class="dialog-atts">
           <AttachmentUpload v-model="rejectForm.attachments" :max="9" tip="选填，驳回说明附件，最多 9 个" />
@@ -445,6 +445,12 @@ const syncDefaultDescription = computed(() => {
 </template>
 
 <style scoped>
+.comment-label {
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
 .dev-actions {
   display: inline-flex;
   flex-wrap: wrap;
