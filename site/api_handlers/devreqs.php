@@ -205,12 +205,21 @@ function qly_api_devreqs_list(): void
         $dir = strtoupper((string) qly_input('sortOrder', 'DESC')) === 'ASC' ? 'ASC' : 'DESC';
     } else {
         $order = 'i.created_at';
-        $dir = strtoupper((string) qly_input('sortOrder', 'DESC')) === 'ASC' ? 'ASC' : 'DESC';
+        // 排序方向：显式传 sortOrder 就听调用方的；
+        // 没传时按环节取默认——评审池是「待办队列」，先进池子的先审（ASC，先来先审），
+        // 其它环节默认最新在前（DESC）。
+        $explicitDir = strtoupper((string) qly_input('sortOrder', ''));
+        if ($explicitDir === 'ASC' || $explicitDir === 'DESC') {
+            $dir = $explicitDir;
+        } else {
+            $dir = ((string) qly_input('status', '') === '评审池') ? 'ASC' : 'DESC';
+        }
     }
 
+    // 次级排序跟随主排序方向：ASC 时同一秒内按 id 正序，保证「先来的在前」稳定可预期
     $rows = qly_all(
         qly_devreq_base_select() . $base . $scopeWhere
-        . ' ORDER BY ' . $order . ' ' . $dir . ', i.id DESC LIMIT ' . $pageSize . ' OFFSET ' . $offset,
+        . ' ORDER BY ' . $order . ' ' . $dir . ', i.id ' . $dir . ' LIMIT ' . $pageSize . ' OFFSET ' . $offset,
         array_merge($filterParams, $scopeParams)
     );
     qly_ok([

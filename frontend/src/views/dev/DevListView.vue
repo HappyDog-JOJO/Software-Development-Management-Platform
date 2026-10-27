@@ -5,6 +5,7 @@
  * - 顶部筛选：可折叠筛选面板（优先级 / 模块 / 状态 / 关键字）
  * - 列宽拖动记忆（colw）+ 列配置（colcfg，显隐与顺序），与问题列表一致
  * - 需求池默认按优先级排序（紧急 > 高 > 中 > 低，同级按提交先后）
+ * - 评审池默认「先来先审」：按提交时间正序（先进池子的排最前），需要时可点表头改排序
  * - 行内操作按角色与状态动态渲染（文字按钮），操作列固定在最右
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -172,7 +173,7 @@ const stageDesc = computed(() => {
   }
   switch (props.stage) {
     case '评审池':
-      return '所有新需求在此等待评审：通过即进入需求池，待定暂留本池（可再改判），驳回则需求作废。'
+      return '所有新需求在此排队等待评审：按提交先后排列（先来先审），通过即进入需求池，待定暂留本池（可再改判），驳回则需求作废。'
     case '需求池':
       return '评审通过的需求在此集结（按优先级排序），开发工程师从中挑选任务点「开发」进入开发中心。'
     case '开发中心':
@@ -335,7 +336,8 @@ const activeFilterCount = computed(() => {
 const sortField = ref<'createdAt' | 'priority' | 'releasedAt'>(
   props.released ? 'releasedAt' : props.stage === '需求池' ? 'priority' : 'createdAt',
 )
-const sortOrder = ref<'ASC' | 'DESC'>('DESC')
+/** 评审池是待办队列 → 默认正序（先来先审）；其它页默认最新在前 */
+const sortOrder = ref<'ASC' | 'DESC'>(props.stage === '评审池' ? 'ASC' : 'DESC')
 
 /** 列表查询参数（列表加载与导出共用，保证导出范围与当前筛选一致） */
 function buildQuery(): DevQuery {
