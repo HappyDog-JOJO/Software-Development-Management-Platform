@@ -444,7 +444,42 @@ CREATE TABLE IF NOT EXISTS `dev_request_comment` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='需求流转备注（人工留言）';
 SQL;
 
-foreach (['department', 'user', 'user_token', 'dict_item', 'issue', 'issue_attachment', 'issue_append', 'handle_record', 'handle_attachment', 'duty_schedule', 'bug_duty_order', 'notice', 'operation_log', 'notification', 'site_config', 'dev_request', 'dev_request_attachment', 'dev_request_comment', 'lost_order'] as $t) {
+$ddl['dev_request_change'] = <<<'SQL'
+CREATE TABLE IF NOT EXISTS `dev_request_change` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `request_id` INT UNSIGNED NOT NULL COMMENT '需求ID',
+  `user_id` INT UNSIGNED NOT NULL COMMENT '操作人ID',
+  `account` VARCHAR(64) NOT NULL COMMENT '操作人账号',
+  `user_name` VARCHAR(60) NOT NULL COMMENT '操作人姓名',
+  `role` VARCHAR(60) NOT NULL DEFAULT '' COMMENT '操作人角色（快照）',
+  `fields` VARCHAR(255) NOT NULL COMMENT '变更字段中文名（逗号/顿号分隔）',
+  `changes_json` TEXT NOT NULL COMMENT '变更明细 JSON：[{field,label,before,after}]',
+  `created_at` DATETIME NOT NULL COMMENT '变更时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_drc_request` (`request_id`),
+  KEY `idx_drc_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='需求字段变更历史（改前/改后）';
+SQL;
+
+$ddl['issue_change'] = <<<'SQL'
+CREATE TABLE IF NOT EXISTS `issue_change` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `issue_id` INT UNSIGNED NOT NULL COMMENT '问题ID',
+  `issue_no` VARCHAR(32) NOT NULL COMMENT '问题编号（冗余，便于排查）',
+  `user_id` INT UNSIGNED NOT NULL COMMENT '操作人ID',
+  `account` VARCHAR(64) NOT NULL COMMENT '操作人账号',
+  `user_name` VARCHAR(60) NOT NULL COMMENT '操作人姓名',
+  `role` VARCHAR(60) NOT NULL DEFAULT '' COMMENT '操作人角色（快照）',
+  `fields` VARCHAR(255) NOT NULL COMMENT '变更字段中文名（顿号分隔）',
+  `changes_json` TEXT NOT NULL COMMENT '变更明细 JSON：[{field,label,before,after}]',
+  `created_at` DATETIME NOT NULL COMMENT '变更时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_ic_issue` (`issue_id`),
+  KEY `idx_ic_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='问题字段变更历史（改前/改后）';
+SQL;
+
+foreach (['department', 'user', 'user_token', 'dict_item', 'issue', 'issue_attachment', 'issue_append', 'handle_record', 'handle_attachment', 'issue_change', 'duty_schedule', 'bug_duty_order', 'notice', 'operation_log', 'notification', 'site_config', 'dev_request', 'dev_request_attachment', 'dev_request_comment', 'dev_request_change', 'lost_order'] as $t) {
     $sql[] = '-- 表：' . $t;
     $sql[] = $ddl[$t];
     $sql[] = '';

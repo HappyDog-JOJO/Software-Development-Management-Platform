@@ -3,7 +3,7 @@
  * 需求详情页：环节步骤条 + 需求信息卡 + 流转时间线（样式与布局对齐问题详情页）。
  * - 顶部工具栏：返回列表 + 操作区（DevRequestActions 按角色与状态动态渲染）
  * - 信息卡：头部标识区（编号/标签/时间戳）+ 左（元信息列表）+ 右（描述/附件）
- * - 时间线：系统流转记录 + 人工备注（人工备注可随时添加，方便就需求细节沟通留痕），最新在上
+ * - 时间线：系统流转记录 + 字段变更（改前→改后对比）+ 人工备注，最新在上
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -93,12 +93,14 @@ function onAttachmentClick(att: DevAttachment, siblings: DevAttachment[]): void 
 /* —— 流转时间线：系统日志 + 人工备注合并（最新在上） —— */
 type TimelineRow = {
   key: string
-  kind: 'log' | 'comment'
+  kind: 'log' | 'comment' | 'change'
   type: string
   account: string
   role: string
   content: string
   createdAt: string
+  /** kind=change 时的字段差异 */
+  diff?: Array<{ field: string; label: string; before: string; after: string }>
 }
 
 const timeline = computed<TimelineRow[]>(() => {
@@ -121,10 +123,27 @@ const timeline = computed<TimelineRow[]>(() => {
     content: c.content,
     createdAt: c.createdAt,
   }))
-  // createdAt 是「Y-m-d H:i:s」字符串，字典序即时间序；同一秒内备注排在系统日志之前（更醒目）
-  return [...logs, ...comments].sort((a, b) => {
+
+  // 字段变更：有新变更记录时，把它同一秒写入的那条「修改需求」日志隐藏，避免重复展示
+  const changes = detail.value.changes ?? []
+  const changeTimes = new Set(changes.map((c) => c.createdAt))
+  const keptLogs = logs.filter((l) => !(l.type === '提交需求' && l.content.startsWith('修改需求') && changeTimes.has(l.createdAt)))
+  const changeRows: TimelineRow[] = changes.map((c) => ({
+    key: 'ch-' + c.id,
+    kind: 'change',
+    type: '修改需求',
+    account: c.userName || c.account,
+    role: c.role,
+    content: c.fields,
+    createdAt: c.createdAt,
+    diff: c.items,
+  }))
+  // createdAt 是「Y-m-d H:i:s」字符串，字典序即时间序；同一秒内备注 > 变更 > 系统日志
+  const weight = (k: TimelineRow['kind']): number => (k === 'comment' ? 0 : k === 'change' ? 1 : 2)
+  return [...keptLogs, ...comments, ...changeRows].sort((a, b) => {
     if (a.createdAt === b.createdAt) {
-      return a.kind === b.kind ? (a.key < b.key ? 1 : -1) : a.kind === 'comment' ? -1 : 1
+      const w = weight(a.kind) - weight(b.kind)
+      return w !== 0 ? w : a.key < b.key ? 1 : -1
     }
     return a.createdAt < b.createdAt ? 1 : -1
   })
@@ -338,13 +357,34 @@ watch(reqId, load)
             placement="top"
             :hollow="idx !== 0"
           >
-            <div class="record" :class="{ 'is-latest': idx === 0, 'is-comment': l.kind === 'comment' }">
+            <div
+              class="record"
+              :class="{ 'is-latest': idx === 0, 'is-comment': l.kind === 'comment', 'is-change': l.kind === 'change' }"
+            >
               <div class="record__head">
                 <span :class="l.kind === 'comment' ? 'pill pill--green' : logTypeClass(l.type)">{{ l.type }}</span>
                 <span class="num-strong">{{ l.account }}</span>
                 <RoleTag :role="l.role" />
+                <span v-if="l.kind === 'change'" class="pill pill--yellow">变更了 {{ l.diff?.length }} 个字段</span>
               </div>
-              <div class="record__body">{{ l.content }}</div>
+
+              <!-- 字段变更：逐字段展示 改前 → 改后 -->
+              <div v-if="l.kind === 'change' && l.diff?.length" class="diff">
+                <div v-for="d in l.diff" :key="d.field" class="diff__row">
+                  <div class="diff__label">{{ d.label }}</div>
+                  <div class="diff__body">
+                    <div class="diff__before">
+                      <span class="diff__tag diff__tag--before">改前</span>
+                      <span class="diff__text">{{ d.before || '（空）' }}</span>
+                    </div>
+                    <div class="diff__after">
+                      <span class="diff__tag diff__tag--after">改后</span>
+                      <span class="diff__text">{{ d.after || '（空）' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="record__body">{{ l.content }}</div>
             </div>
           </el-timeline-item>
         </el-timeline>
@@ -724,6 +764,92 @@ watch(reqId, load)
 .record.is-comment {
   background: rgba(122, 196, 152, 0.1);
   border-left: 3px solid rgba(122, 196, 152, 0.65);
+}
+
+/* 变更记录：逐字段 diff */
+.record.is-change {
+  background: rgba(255, 214, 122, 0.12);
+  border-left: 3px solid rgba(232, 178, 64, 0.7);
+}
+
+.diff {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diff__row {
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.diff__label {
+  flex: 0 0 68px;
+  color: var(--color-text-secondary);
+  padding-top: 2px;
+}
+
+.diff__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.diff__before,
+.diff__after {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  line-height: 1.65;
+}
+
+.diff__tag {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.diff__tag--before {
+  background: rgba(232, 108, 108, 0.14);
+  color: #c0504d;
+  text-decoration: none;
+}
+
+.diff__tag--after {
+  background: rgba(122, 196, 152, 0.18);
+  color: #3d8f63;
+}
+
+.diff__text {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--color-text-primary);
+}
+
+/* 改前：淡红底 + 删除线（长描述也能看出是旧内容） */
+.diff__before .diff__text {
+  color: #a94442;
+  background: rgba(232, 108, 108, 0.08);
+  text-decoration: line-through;
+  text-decoration-color: rgba(169, 68, 66, 0.45);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+/* 改后：淡绿底 */
+.diff__after .diff__text {
+  color: #2f7a52;
+  background: rgba(122, 196, 152, 0.1);
+  border-radius: 4px;
+  padding: 0 4px;
 }
 
 /* 添加备注输入区 */

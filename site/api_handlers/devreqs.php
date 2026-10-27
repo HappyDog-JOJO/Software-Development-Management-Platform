@@ -290,6 +290,25 @@ function qly_api_devreqs_detail(): void
     }
     $data['comments'] = $comments;
 
+    // 字段级变更历史（修改需求时保存的改前/改后）
+    $changes = [];
+    foreach (qly_all(
+        'SELECT * FROM `dev_request_change` WHERE request_id = :rid ORDER BY created_at DESC, id DESC LIMIT 200',
+        [':rid' => $id]
+    ) as $ch) {
+        $items = json_decode((string) $ch['changes_json'], true);
+        $changes[] = [
+            'id' => (int) $ch['id'],
+            'account' => (string) $ch['account'],
+            'userName' => (string) $ch['user_name'],
+            'role' => (string) $ch['role'],
+            'fields' => (string) $ch['fields'],
+            'items' => is_array($items) ? $items : [],
+            'createdAt' => (string) $ch['created_at'],
+        ];
+    }
+    $data['changes'] = $changes;
+
     qly_ok($data);
 }
 
@@ -387,6 +406,54 @@ function qly_api_devreqs_create(): void
 }
 
 /** 修改需求（提交人本人改自己的 / 管理员改全部；仅评审池阶段，评审开始后不可改） */
+/**
+ * 计算需求字段级变更：返回 [{field,label,before,after}]，只含有变化的字段。
+ * 目的：修改需求时把「改前 / 改后」都存下来，时间线上能直接看差异，
+ * 也避免上次那种「描述被覆盖后无法还原」的情况。
+ */
+function qly_devreq_diff(array $row, array $update): array
+{
+    $labels = [
+        'title' => '需求标题',
+        'description' => '需求描述',
+        'module_name' => '所属模块',
+        'priority' => '优先级',
+    ];
+    $out = [];
+    foreach ($labels as $field => $label) {
+        if (!array_key_exists($field, $update)) {
+            continue;
+        }
+        $before = (string) ($row[$field] ?? '');
+        $after = (string) ($update[$field] ?? '');
+        if ($before === $after) {
+            continue;
+        }
+        $out[] = ['field' => $field, 'label' => $label, 'before' => $before, 'after' => $after];
+    }
+    return $out;
+}
+
+/** 写一条需求变更历史（含完整改前/改后，描述这类长文本也完整保留） */
+function qly_devreq_save_change(array $user, int $requestId, array $diff): void
+{
+    if (!$diff) {
+        return;
+    }
+    $roles = qly_parse_roles(isset($user['roles']) ? (string) $user['roles'] : null);
+    $names = array_map(static fn(array $d): string => (string) $d['label'], $diff);
+    qly_insert('dev_request_change', [
+        'request_id' => $requestId,
+        'user_id' => (int) $user['id'],
+        'account' => (string) $user['account'],
+        'user_name' => ($user['name'] !== null && $user['name'] !== '') ? (string) $user['name'] : (string) $user['account'],
+        'role' => $roles ? implode('、', $roles) : '未分配',
+        'fields' => mb_substr(implode('、', $names), 0, 250),
+        'changes_json' => json_encode($diff, JSON_UNESCAPED_UNICODE),
+        'created_at' => date('Y-m-d H:i:s'),
+    ]);
+}
+
 function qly_api_devreqs_update(): void
 {
     $user = qly_auth_user();
@@ -445,13 +512,18 @@ function qly_api_devreqs_update(): void
     if ($hasPriority) {
         $update['priority'] = $priority;
     }
+    // 先算变更（要用修改前的旧值），再落库
+    $diff = qly_devreq_diff($row, $update);
     qly_update('dev_request', $id, $update);
     // 提交附件整体替换：仅在请求携带 attachments 数组时执行（回填失败时前端不传，保持原附件不动）
     if (is_array($attachments)) {
         qly_exec('DELETE FROM `dev_request_attachment` WHERE request_id = :rid AND scene = :sc', [':rid' => $id, ':sc' => 'submit']);
         qly_devreq_save_attachments($id, 'submit', $attachments, (int) $user['id']);
     }
-    qly_log($user, '提交需求', (string) $row['req_no'], '修改需求：' . $title . '（评审前修改）');
+    // 字段级变更留痕（改前/改后完整保存，时间线可对比）
+    qly_devreq_save_change($user, $id, $diff);
+    $changedLabels = $diff ? implode('、', array_map(static fn(array $d): string => (string) $d['label'], $diff)) : '无内容变化';
+    qly_log($user, '提交需求', (string) $row['req_no'], '修改需求：' . $title . '（变更字段：' . $changedLabels . '）');
     qly_ok(null, '需求已修改');
 }
 

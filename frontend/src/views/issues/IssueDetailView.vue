@@ -5,6 +5,7 @@
  * 下半部分：处理记录时间线（最新在上）；无记录显示空态
  * 时间线上方提供「添加备注」：任何能看到该问题的人都能随时补一句（答疑、跟进结论、沟通留痕），
  * 与售后处理记录混排展示，用绿色「备注」标签 + 左侧竖线区分。
+ * 另：状态/价值/分类/处理人被修改时，时间线会出现「变更」卡片，逐字段显示改前 → 改后。
  * 操作区（售后/管理员）：复用 HandleDialog，提交后原地刷新时间线
  * 侧边折叠区：该问题的操作日志（所有登录用户可见，只读）
  */
@@ -55,6 +56,14 @@ type TimelineItem =
   | { kind: 'handle'; id: string; time: string; rec: HandleRecord }
   | { kind: 'submit'; id: string; time: string; account: string; content: string }
   | { kind: 'append'; id: string; time: string; authorName: string; authorRole: Role; content: string }
+  | {
+      kind: 'change'
+      id: string
+      time: string
+      authorName: string
+      authorRole: Role
+      diff: Array<{ field: string; label: string; before: string; after: string }>
+    }
 
 const timeline = computed<TimelineItem[]>(() => {
   const items: TimelineItem[] = []
@@ -81,7 +90,27 @@ const timeline = computed<TimelineItem[]>(() => {
     items.push({ kind: 'append', id: 'a' + a.id, time: a.createdAt, authorName: a.authorName, authorRole: a.authorRole, content: a.content })
   }
 
-  return items.sort((a, b) => (a.time < b.time ? 1 : a.time > b.time ? -1 : 0))
+  // 字段变更（状态/价值/分类/处理人 的改前改后）
+  for (const c of detail.value?.changes ?? []) {
+    items.push({
+      kind: 'change',
+      id: 'c' + c.id,
+      time: c.createdAt,
+      authorName: c.userName || c.account,
+      authorRole: c.role as Role,
+      diff: c.items,
+    })
+  }
+
+  // 同一秒内：变更 > 处理记录 > 备注 > 提交（保证「谁改的」紧挨着对应动作）
+  const weight = (k: TimelineItem['kind']): number => (k === 'change' ? 0 : k === 'handle' ? 1 : k === 'append' ? 2 : 3)
+  return items.sort((a, b) => {
+    if (a.time === b.time) {
+      const w = weight(a.kind) - weight(b.kind)
+      return w !== 0 ? w : a.id < b.id ? 1 : -1
+    }
+    return a.time < b.time ? 1 : -1
+  })
 })
 
 /** 最新一条处理记录的 id（用于高亮「当前结论」） */
@@ -318,6 +347,30 @@ watch(issueId, (val, old) => {
                 <span class="pill pill--green">提交问题</span>
               </div>
               <div class="record__body">{{ item.content }}</div>
+            </div>
+
+            <!-- 字段变更：逐字段展示 改前 → 改后 -->
+            <div v-else-if="item.kind === 'change'" class="record record--change">
+              <div class="record__head">
+                <span class="num-strong">{{ item.authorName }}</span>
+                <RoleTag :role="item.authorRole" />
+                <span class="pill pill--yellow">变更了 {{ item.diff.length }} 个字段</span>
+              </div>
+              <div class="diff">
+                <div v-for="d in item.diff" :key="d.field" class="diff__row">
+                  <div class="diff__label">{{ d.label }}</div>
+                  <div class="diff__body">
+                    <div class="diff__before">
+                      <span class="diff__tag diff__tag--before">改前</span>
+                      <span class="diff__text">{{ d.before || '（空）' }}</span>
+                    </div>
+                    <div class="diff__after">
+                      <span class="diff__tag diff__tag--after">改后</span>
+                      <span class="diff__text">{{ d.after || '（空）' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- 备注（任何人随时添加；历史数据里的「补充说明」也走这里） -->
@@ -623,6 +676,88 @@ watch(issueId, (val, old) => {
 .record--note {
   background: rgba(122, 196, 152, 0.1);
   border-left: 3px solid rgba(122, 196, 152, 0.65);
+}
+
+/* 变更记录：逐字段 diff（与需求详情同一套视觉） */
+.record--change {
+  background: rgba(255, 214, 122, 0.12);
+  border-left: 3px solid rgba(232, 178, 64, 0.7);
+}
+
+.diff {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.diff__row {
+  display: flex;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.diff__label {
+  flex: 0 0 68px;
+  color: var(--color-text-secondary);
+  padding-top: 2px;
+}
+
+.diff__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.diff__before,
+.diff__after {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  line-height: 1.65;
+}
+
+.diff__tag {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.diff__tag--before {
+  background: rgba(232, 108, 108, 0.14);
+  color: #c0504d;
+}
+
+.diff__tag--after {
+  background: rgba(122, 196, 152, 0.18);
+  color: #3d8f63;
+}
+
+.diff__text {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.diff__before .diff__text {
+  color: #a94442;
+  background: rgba(232, 108, 108, 0.08);
+  text-decoration: line-through;
+  text-decoration-color: rgba(169, 68, 66, 0.45);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+.diff__after .diff__text {
+  color: #2f7a52;
+  background: rgba(122, 196, 152, 0.1);
+  border-radius: 4px;
+  padding: 0 4px;
 }
 
 /* 添加备注输入区 */

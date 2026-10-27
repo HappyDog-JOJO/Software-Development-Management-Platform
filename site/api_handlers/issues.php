@@ -228,10 +228,29 @@ function qly_api_issues_detail(): void
         ];
     }
 
+    // 字段级变更历史（状态 / 价值 / 分类 / 处理人 的改前改后）
+    $changes = [];
+    foreach (qly_all(
+        'SELECT * FROM `issue_change` WHERE issue_id = :iid ORDER BY created_at DESC, id DESC LIMIT 200',
+        [':iid' => $id]
+    ) as $ch) {
+        $items = json_decode((string) $ch['changes_json'], true);
+        $changes[] = [
+            'id' => (int) $ch['id'],
+            'account' => (string) $ch['account'],
+            'userName' => (string) $ch['user_name'],
+            'role' => (string) $ch['role'],
+            'fields' => (string) $ch['fields'],
+            'items' => is_array($items) ? $items : [],
+            'createdAt' => (string) $ch['created_at'],
+        ];
+    }
+
     $data = qly_issue_row_public($row, count($attOut));
     $data['attachments'] = $attOut;
     $data['appends'] = $appendOut;
     $data['logs'] = $logs;
+    $data['changes'] = $changes;
     qly_ok($data);
 }
 
@@ -257,6 +276,60 @@ function qly_api_issues_handlers(): void
     qly_ok($items);
 }
 
+/**
+ * 问题字段级变更留痕（改前 / 改后）。
+ * 目的：状态、价值、分类、处理人这类「主表字段」被改过时，时间线上要能看出改了什么，
+ * 而不是只有一句「已处理」。与处理记录互补：处理记录是内容，这里是字段差异。
+ */
+function qly_issue_change_labels(): array
+{
+    return [
+        'status' => '问题状态',
+        'value_name' => '问题价值',
+        'category_name' => '问题分类',
+        'handler_name' => '处理人',
+    ];
+}
+
+/** 计算字段差异：返回 [{field,label,before,after}]，只含变化项 */
+function qly_issue_diff(array $before, array $after): array
+{
+    $out = [];
+    foreach (qly_issue_change_labels() as $field => $label) {
+        if (!array_key_exists($field, $after)) {
+            continue;
+        }
+        $b = (string) ($before[$field] ?? '');
+        $a = (string) ($after[$field] ?? '');
+        if ($b === $a) {
+            continue;
+        }
+        $out[] = ['field' => $field, 'label' => $label, 'before' => $b, 'after' => $a];
+    }
+    return $out;
+}
+
+/** 写一条问题变更历史 */
+function qly_issue_save_change(array $user, string $issueNo, int $issueId, array $diff): void
+{
+    if (!$diff) {
+        return;
+    }
+    $roles = qly_parse_roles(isset($user['roles']) ? (string) $user['roles'] : null);
+    $names = array_map(static fn(array $d): string => (string) $d['label'], $diff);
+    qly_insert('issue_change', [
+        'issue_id' => $issueId,
+        'issue_no' => $issueNo,
+        'user_id' => (int) $user['id'],
+        'account' => (string) $user['account'],
+        'user_name' => ($user['name'] !== null && $user['name'] !== '') ? (string) $user['name'] : (string) $user['account'],
+        'role' => $roles ? implode('、', $roles) : '未分配',
+        'fields' => mb_substr(implode('、', $names), 0, 250),
+        'changes_json' => json_encode($diff, JSON_UNESCAPED_UNICODE),
+        'created_at' => date('Y-m-d H:i:s'),
+    ]);
+}
+
 /** 管理员在列表直接修改问题状态（不影响处理人/处理时间等其它字段） */
 function qly_api_issues_status(): void
 {
@@ -275,6 +348,11 @@ function qly_api_issues_status(): void
         qly_ok(null, '状态未变化');
     }
     qly_update('issue', $id, ['status' => $status]);
+    // 字段变更留痕：改前 → 改后
+    qly_issue_save_change($admin, (string) $row['issue_no'], $id, qly_issue_diff(
+        ['status' => (string) $row['status']],
+        ['status' => $status]
+    ));
     qly_log($admin, '问题处理', (string) $row['issue_no'], '修改问题状态：' . $row['status'] . ' → ' . $status);
     qly_ok(null, '状态已更新');
 }
@@ -445,6 +523,21 @@ function qly_api_issues_handle(): void
         'handler_name' => $firstHandlerName,
         'handled_at' => date('Y-m-d H:i:s'),
     ]);
+    // 字段变更留痕：处理会同时改 状态/价值/分类/处理人，这里逐个记改前改后
+    qly_issue_save_change($user, (string) $issue['issue_no'], $id, qly_issue_diff(
+        [
+            'status' => (string) ($issue['status'] ?? ''),
+            'value_name' => (string) ($issue['value_name'] ?? ''),
+            'category_name' => (string) ($issue['category_name'] ?? ''),
+            'handler_name' => (string) ($issue['handler_name'] ?? ''),
+        ],
+        [
+            'status' => $status,
+            'value_name' => (string) $value['name'],
+            'category_name' => (string) $category['name'],
+            'handler_name' => $firstHandlerName,
+        ]
+    ));
     qly_log($user, '问题处理', (string) $issue['issue_no'], '处理问题：处理情况 ' . $hs['name'] . '，问题价值 ' . $value['name'] . '，问题分类 ' . $category['name'] . '，备注：' . mb_substr($remark, 0, 80));
     // 通知问题提出人（处理人自己不用收到自己的处理结果）
     qly_notify(

@@ -224,10 +224,31 @@ export interface IssueLogItem {
   createdAt: string
 }
 
+/** 字段变更明细（改前 / 改后）——需求与问题共用 */
+export interface FieldChangeItem {
+  field: string
+  label: string
+  before: string
+  after: string
+}
+
+/** 问题字段变更记录 */
+export interface IssueChangeItem {
+  id: number
+  account: string
+  userName: string
+  role: string
+  fields: string
+  items: FieldChangeItem[]
+  createdAt: string
+}
+
 export interface IssueDetail extends Issue {
   attachments: Attachment[]
   appends: IssueAppend[]
   logs: IssueLogItem[]
+  /** 字段级变更历史（状态/价值/分类/处理人的改前改后） */
+  changes?: IssueChangeItem[]
 }
 
 export interface HandleRecord {
@@ -512,11 +533,28 @@ export interface DevCommentItem {
   createdAt: string
 }
 
+/** 需求字段变更明细（改前 / 改后） */
+export interface DevChangeField extends FieldChangeItem {}
+
+/** 需求字段变更记录（一次修改可能同时改多个字段） */
+export interface DevChangeItem {
+  id: number
+  account: string
+  userName: string
+  role: string
+  /** 变更字段中文名，顿号分隔 */
+  fields: string
+  items: DevChangeField[]
+  createdAt: string
+}
+
 export interface DevRequestDetail extends DevRequest {
   attachments: DevAttachment[]
   logs: DevReqLogItem[]
   /** 人工留言（与 logs 一起按时间倒序展示在流转时间线） */
   comments?: DevCommentItem[]
+  /** 字段级变更历史（修改需求时保存的改前/改后） */
+  changes?: DevChangeItem[]
 }
 
 export interface DevQuery {
