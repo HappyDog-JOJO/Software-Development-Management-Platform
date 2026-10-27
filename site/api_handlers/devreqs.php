@@ -264,7 +264,60 @@ function qly_api_devreqs_detail(): void
     }
     $data['logs'] = $logs;
 
+    // 流转备注（人工留言）：与系统日志一起按时间倒序展示，方便就需求细节沟通留痕
+    $comments = [];
+    foreach (qly_all(
+        'SELECT * FROM `dev_request_comment` WHERE request_id = :rid ORDER BY created_at DESC, id DESC LIMIT 200',
+        [':rid' => $id]
+    ) as $cm) {
+        $comments[] = [
+            'id' => (int) $cm['id'],
+            'account' => (string) $cm['account'],
+            'userName' => (string) $cm['user_name'],
+            'role' => (string) $cm['role'],
+            'content' => (string) $cm['content'],
+            'createdAt' => (string) $cm['created_at'],
+        ];
+    }
+    $data['comments'] = $comments;
+
     qly_ok($data);
+}
+
+/**
+ * 需求流转备注（人工留言）。
+ * 谁能看这条需求，谁就能留言：提交人、评审委员、产品经理、开发、管理员都可在时间线上补一句，
+ * 用于补充说明 / 答疑 / 结论留痕。系统日志仍只由业务动作写入，两者在时间线上混排展示。
+ */
+function qly_api_devreqs_comment(): void
+{
+    $user = qly_auth_user();
+    $id = qly_input_int('id', 0);
+    $content = trim((string) qly_input('content', ''));
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
+    if (!$row) {
+        qly_fail('需求不存在');
+    }
+    if (!qly_devreq_visible($user, $row)) {
+        qly_forbidden('该需求不在您的可见范围');
+    }
+    if ($content === '') {
+        qly_fail('备注内容不能为空');
+    }
+    if (mb_strlen($content) > 1000) {
+        qly_fail('备注最多 1000 个字');
+    }
+    $roles = qly_parse_roles(isset($user['roles']) ? (string) $user['roles'] : null);
+    $commentId = qly_insert('dev_request_comment', [
+        'request_id' => $id,
+        'user_id' => (int) $user['id'],
+        'account' => (string) $user['account'],
+        'user_name' => ($user['name'] !== null && $user['name'] !== '') ? (string) $user['name'] : (string) $user['account'],
+        'role' => $roles ? implode('、', $roles) : '未分配',
+        'content' => $content,
+        'created_at' => date('Y-m-d H:i:s'),
+    ]);
+    qly_ok(['id' => $commentId], '备注已添加');
 }
 
 /** 提交需求：所有登录用户 → 进入评审池（优先级提交时不选，统一默认「中」，后续由评审委员/产品经理在列表调整） */

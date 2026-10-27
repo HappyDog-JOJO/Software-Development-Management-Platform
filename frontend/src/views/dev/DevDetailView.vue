@@ -3,11 +3,12 @@
  * 需求详情页：环节步骤条 + 需求信息卡 + 流转时间线（样式与布局对齐问题详情页）。
  * - 顶部工具栏：返回列表 + 操作区（DevRequestActions 按角色与状态动态渲染）
  * - 信息卡：头部标识区（编号/标签/时间戳）+ 左（元信息列表）+ 右（描述/附件）
- * - 时间线：提交、评审、开发与发布的全部记录（最新在上）
+ * - 时间线：系统流转记录 + 人工备注（人工备注可随时添加，方便就需求细节沟通留痕），最新在上
  */
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getDevRequest } from '@/api/devreq'
+import { ElMessage } from 'element-plus'
+import { addDevRequestComment, getDevRequest } from '@/api/devreq'
 import { DEV_PRIORITY_TAG, DEV_STAGES, DEV_STATUS_TAG, devStageIndex, type DevTagType } from '@/constants/devreq'
 import { logTypeClass } from '@/constants/issue'
 import DevRequestActions from '@/components/DevRequestActions.vue'
@@ -87,6 +88,68 @@ function onAttachmentClick(att: DevAttachment, siblings: DevAttachment[]): void 
     att.name,
     siblings.filter((s2) => isImage(s2.mimeType, s2.name)).map((s2) => ({ url: s2.url, name: s2.name })),
   )
+}
+
+/* —— 流转时间线：系统日志 + 人工备注合并（最新在上） —— */
+type TimelineRow = {
+  key: string
+  kind: 'log' | 'comment'
+  type: string
+  account: string
+  role: string
+  content: string
+  createdAt: string
+}
+
+const timeline = computed<TimelineRow[]>(() => {
+  if (!detail.value) return []
+  const logs: TimelineRow[] = detail.value.logs.map((l) => ({
+    key: 'log-' + l.id,
+    kind: 'log',
+    type: l.type,
+    account: l.account,
+    role: l.role,
+    content: l.content,
+    createdAt: l.createdAt,
+  }))
+  const comments: TimelineRow[] = (detail.value.comments ?? []).map((c) => ({
+    key: 'cm-' + c.id,
+    kind: 'comment',
+    type: '备注',
+    account: c.userName || c.account,
+    role: c.role,
+    content: c.content,
+    createdAt: c.createdAt,
+  }))
+  // createdAt 是「Y-m-d H:i:s」字符串，字典序即时间序；同一秒内备注排在系统日志之前（更醒目）
+  return [...logs, ...comments].sort((a, b) => {
+    if (a.createdAt === b.createdAt) {
+      return a.kind === b.kind ? (a.key < b.key ? 1 : -1) : a.kind === 'comment' ? -1 : 1
+    }
+    return a.createdAt < b.createdAt ? 1 : -1
+  })
+})
+
+/* —— 添加备注（任何能看这条需求的人都可以留言） —— */
+const commentText = ref('')
+const commentSubmitting = ref(false)
+
+async function onAddComment(): Promise<void> {
+  const text = commentText.value.trim()
+  if (!text) {
+    ElMessage.warning('请先写点内容')
+    return
+  }
+  if (!reqId.value) return
+  commentSubmitting.value = true
+  try {
+    await addDevRequestComment(reqId.value, text)
+    commentText.value = ''
+    ElMessage.success('备注已添加')
+    await load()
+  } finally {
+    commentSubmitting.value = false
+  }
 }
 
 onMounted(load)
@@ -247,20 +310,37 @@ watch(reqId, load)
       <div class="moon-card">
         <div class="section-title">
           流转时间线
-          <span class="section-title__hint">提交、评审、开发与发布的全部记录，最新在上</span>
+          <span class="section-title__hint">系统流转记录 + 人工备注，最新在上</span>
         </div>
 
-        <el-timeline v-if="detail.logs.length" class="record-timeline">
+        <!-- 添加备注：随时补充说明 / 答疑 / 结论，所有人可见（沟通留痕） -->
+        <div class="comment-box">
+          <el-input
+            v-model="commentText"
+            type="textarea"
+            :rows="3"
+            maxlength="1000"
+            show-word-limit
+            placeholder="补充说明、答疑、结论都可以写在这里（如：这个需求先按方案 A 做，细节已和客户确认）"
+            @keydown.ctrl.enter="onAddComment"
+          />
+          <div class="comment-box__actions">
+            <span class="comment-box__tip">Ctrl + Enter 快速发送；备注会出现在下方时间线，提交人与开发都能看到</span>
+            <el-button type="primary" :loading="commentSubmitting" @click="onAddComment">发送备注</el-button>
+          </div>
+        </div>
+
+        <el-timeline v-if="timeline.length" class="record-timeline">
           <el-timeline-item
-            v-for="(l, idx) in detail.logs"
-            :key="l.id"
+            v-for="(l, idx) in timeline"
+            :key="l.key"
             :timestamp="fmtDateTime(l.createdAt)"
             placement="top"
             :hollow="idx !== 0"
           >
-            <div class="record" :class="{ 'is-latest': idx === 0 }">
+            <div class="record" :class="{ 'is-latest': idx === 0, 'is-comment': l.kind === 'comment' }">
               <div class="record__head">
-                <span :class="logTypeClass(l.type)">{{ l.type }}</span>
+                <span :class="l.kind === 'comment' ? 'pill pill--green' : logTypeClass(l.type)">{{ l.type }}</span>
                 <span class="num-strong">{{ l.account }}</span>
                 <RoleTag :role="l.role" />
               </div>
@@ -638,6 +718,35 @@ watch(reqId, load)
 .record.is-latest {
   background: var(--color-primary-tint);
   border-color: rgba(124, 140, 228, 0.24);
+}
+
+/* 人工备注：与系统流转记录区分开（左侧一条淡绿竖线） */
+.record.is-comment {
+  background: rgba(122, 196, 152, 0.1);
+  border-left: 3px solid rgba(122, 196, 152, 0.65);
+}
+
+/* 添加备注输入区 */
+.comment-box {
+  margin-bottom: 16px;
+  padding: 12px;
+  border-radius: var(--radius-control);
+  background: var(--color-bg-sub);
+  border: 1px dashed rgba(124, 140, 228, 0.3);
+}
+
+.comment-box__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.comment-box__tip {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  flex: 1;
+  min-width: 0;
 }
 
 .record__head {

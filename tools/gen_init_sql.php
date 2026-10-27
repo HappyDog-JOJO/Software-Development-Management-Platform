@@ -427,7 +427,24 @@ CREATE TABLE IF NOT EXISTS `lost_order` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='输单记录（销售分析）';
 SQL;
 
-foreach (['department', 'user', 'user_token', 'dict_item', 'issue', 'issue_attachment', 'issue_append', 'handle_record', 'handle_attachment', 'duty_schedule', 'bug_duty_order', 'notice', 'operation_log', 'notification', 'site_config', 'dev_request', 'dev_request_attachment', 'lost_order'] as $t) {
+$ddl['dev_request_comment'] = <<<'SQL'
+CREATE TABLE IF NOT EXISTS `dev_request_comment` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  `request_id` INT UNSIGNED NOT NULL COMMENT '需求ID',
+  `user_id` INT UNSIGNED NOT NULL COMMENT '留言人ID',
+  `account` VARCHAR(64) NOT NULL COMMENT '留言人账号',
+  `user_name` VARCHAR(60) NOT NULL COMMENT '留言人姓名',
+  `role` VARCHAR(60) NOT NULL DEFAULT '' COMMENT '留言人角色（快照，多角色逗号分隔）',
+  `content` VARCHAR(1000) NOT NULL COMMENT '备注内容',
+  `created_at` DATETIME NOT NULL COMMENT '留言时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_dc_request` (`request_id`),
+  KEY `idx_dc_user` (`user_id`),
+  KEY `idx_dc_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='需求流转备注（人工留言）';
+SQL;
+
+foreach (['department', 'user', 'user_token', 'dict_item', 'issue', 'issue_attachment', 'issue_append', 'handle_record', 'handle_attachment', 'duty_schedule', 'bug_duty_order', 'notice', 'operation_log', 'notification', 'site_config', 'dev_request', 'dev_request_attachment', 'dev_request_comment', 'lost_order'] as $t) {
     $sql[] = '-- 表：' . $t;
     $sql[] = $ddl[$t];
     $sql[] = '';

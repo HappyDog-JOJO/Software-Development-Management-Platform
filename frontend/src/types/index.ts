@@ -502,9 +502,21 @@ export interface DevReqLogItem {
   createdAt: string
 }
 
+/** 需求流转备注（人工留言，时间线沟通用） */
+export interface DevCommentItem {
+  id: number
+  account: string
+  userName: string
+  role: string
+  content: string
+  createdAt: string
+}
+
 export interface DevRequestDetail extends DevRequest {
   attachments: DevAttachment[]
   logs: DevReqLogItem[]
+  /** 人工留言（与 logs 一起按时间倒序展示在流转时间线） */
+  comments?: DevCommentItem[]
 }
 
 export interface DevQuery {

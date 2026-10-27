@@ -72,6 +72,11 @@ export function battlePublishDevRequest(ids: number[]): Promise<{ affected: numb
   return http.post<{ affected: number; skipped: number }>('/api.php?r=devreqs/battle-publish', { ids })
 }
 
+/** 添加流转备注（能看该需求的人都可以留言，纯沟通留痕） */
+export function addDevRequestComment(id: number, content: string): Promise<{ id: number }> {
+  return http.post<{ id: number }>('/api.php?r=devreqs/comment', { id, content })
+}
+
 /** 撤回需求（仅管理员）：把处理进度退回上一步（需求池→评审池 / 开发中心→需求池 / 已上线→开发中心） */
 export function withdrawDevRequest(id: number): Promise<{ status: string }> {
   return http.post<{ status: string }>('/api.php?r=devreqs/withdraw', { id })
