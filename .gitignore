@@ -18,6 +18,9 @@ site/uploads/*
 backups/
 .cowork-temp/
 
+# ===== 交付包（构建产物，不入库） =====
+*.zip
+
 # ===== 本地杂项 =====
 shot_ref.png
 test_scope_run.py
