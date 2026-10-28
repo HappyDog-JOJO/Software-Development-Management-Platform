@@ -2,7 +2,8 @@
 /**
  * 需求详情页：环节步骤条 + 需求信息卡 + 流转时间线（样式与布局对齐问题详情页）。
  * - 顶部工具栏：上一条/下一条 + 返回列表 + 操作区（DevRequestActions 按角色与状态动态渲染）
- *   上一条/下一条按「同状态 + 同可见范围」的顺序翻（评审池是提交正序，其它环节最新在前）
+ *   上一条/下一条跟随「从哪个列表进来」：列表页跳转时把筛选与排序写进 URL query，
+ *   详情页据此在同一个列表里翻页（评审池=提交正序，其它=列表当时的分页顺序）
  * - 信息卡：头部标识区（编号/标签/时间戳）+ 左（元信息列表）+ 右（描述/附件）
  * - 时间线：系统流转记录 + 字段变更（改前→改后对比）+ 人工备注，最新在上
  */
@@ -24,8 +25,19 @@ const router = useRouter()
 
 const loading = ref(false)
 const detail = ref<DevRequestDetail | null>(null)
-/** 上一条 / 下一条（同状态相邻需求） */
+/** 上一条 / 下一条（跟随「从哪个列表进来」的顺序） */
 const neighbors = ref<DevNeighbors | null>(null)
+
+/** 列表口径：URL query 里带的筛选/排序参数（由列表页跳转时写入） */
+const listScope = computed<Record<string, string>>(() => {
+  const out: Record<string, string> = {}
+  for (const [k, v] of Object.entries(route.query)) {
+    if (typeof v === 'string' && v !== '') {
+      out[k] = v
+    }
+  }
+  return out
+})
 
 const reqId = computed(() => Number(route.params.id) || 0)
 
@@ -56,7 +68,7 @@ async function load(): Promise<void> {
   try {
     detail.value = await getDevRequest(reqId.value)
     // 相邻需求：失败不影响详情（静默）
-    neighbors.value = await fetchDevRequestNeighbors(reqId.value).catch(() => null)
+    neighbors.value = await fetchDevRequestNeighbors(reqId.value, listScope.value).catch(() => null)
   } catch {
     detail.value = null
     neighbors.value = null
@@ -69,7 +81,8 @@ async function load(): Promise<void> {
 function goNeighbor(target: 'prev' | 'next'): void {
   const hit = neighbors.value?.[target]
   if (!hit) return
-  void router.push('/dev/reqs/' + hit.id)
+  // 保留列表口径，翻页后仍在同一个列表里
+  void router.push({ path: '/dev/reqs/' + hit.id, query: listScope.value })
 }
 
 /* —— 附件按场景分组 —— */

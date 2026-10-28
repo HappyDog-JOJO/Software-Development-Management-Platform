@@ -80,8 +80,15 @@ export interface DevNeighbors {
   next: { id: number; reqNo: string; title: string; status: string } | null
 }
 
-export function fetchDevRequestNeighbors(id: number, mine = false): Promise<DevNeighbors> {
-  return http.get<DevNeighbors>('/api.php?r=devreqs/neighbors', mine ? { id, mine: '1' } : { id }, true)
+/**
+ * 取相邻需求：把「进入详情时所在列表」的筛选与排序原样带过去，
+ * 保证从评审池进来就翻评审池、从我的需求进来就翻我的需求。
+ */
+export function fetchDevRequestNeighbors(
+  id: number,
+  scope: Record<string, string> = {},
+): Promise<DevNeighbors> {
+  return http.get<DevNeighbors>('/api.php?r=devreqs/neighbors', { id, ...scope }, true)
 }
 
 /** 添加流转备注（能看该需求的人都可以留言，纯沟通留痕） */

@@ -232,15 +232,21 @@ function qly_api_devreqs_list(): void
 
 /**
  * 相邻需求（详情页「上一条 / 下一条」用）。
- * 口径与列表保持一致：同一状态集合内，评审池按提交时间正序，其它环节按提交时间倒序；
- * 数据可见范围沿用 qly_devreq_scope_where，避免「翻到看不见的需求」。
- * 可选 mine=1：只在「我提交的」范围内翻页。
+ * 走的是「进入详情时所在列表」的口径：把列表的筛选与排序参数原样传过来
+ * （status / mine / hidePending / keyword / priority / moduleId / assigneeId /
+ *  releasedStart / releasedEnd / sortField / sortOrder），
+ * 这样从评审池进来就翻评审池、从我的需求进来就翻我的需求，顺序与列表完全一致。
+ * 若当前需求不在该筛选集合里（例如直接打开链接、或状态已变），
+ * 自动退回「同状态 + 同可见范围」集合，保证按钮仍可用。
  */
 function qly_api_devreqs_neighbors(): void
 {
     $user = qly_auth_user();
     $id = qly_input_int('id', 0);
-    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
+    if ($id <= 0) {
+        qly_fail('需求不存在');
+    }
+    $row = qly_one('SELECT id, req_no, title, status FROM `dev_request` WHERE id = :id', [':id' => $id]);
     if (!$row) {
         qly_fail('需求不存在');
     }
@@ -248,49 +254,90 @@ function qly_api_devreqs_neighbors(): void
         qly_forbidden('该需求不在您的可见范围');
     }
 
-    $status = (string) $row['status'];
-    // 评审池是待办队列（先来先审）→ 正序；其它环节最新在前（与列表默认一致）
-    $asc = $status === '评审池';
-
     [$scopeWhere, $scopeParams] = qly_devreq_scope_where($user, 'i');
-    $where = ' WHERE i.status = :st' . $scopeWhere;
-    $params = array_merge([':st' => $status], $scopeParams);
-    if ((string) qly_input('mine', '') === '1') {
-        $where .= ' AND i.submitter_id = :mine_uid';
-        $params[':mine_uid'] = (int) $user['id'];
+
+    // 列表口径：与列表页同一套筛选
+    [$filterWhere, $filterParams] = qly_devreq_filters();
+    $statusFilter = (string) qly_input('status', '');
+    // 没有任何列表口径、且不是从列表页进来的（直接打开链接 / 站内通知）→ 自动按当前需求所处环节翻，
+    // 避免「上一条」跳到别的环节去。列表页跳转时会带 from=list，一律以列表口径为准。
+    $fromList = (string) qly_input('from', '') === 'list';
+    if ($filterWhere === '' && !$fromList) {
+        $statusFilter = (string) $row['status'];
+        $filterWhere = ' AND i.status = :auto_st';
+        $filterParams = [':auto_st' => $statusFilter];
     }
 
-    $createdAt = (string) $row['created_at'];
-    // 严格小/大于当前这条的，才算「排在它前面 / 后面」（同秒用 id 兜底，顺序稳定）
-    // 注意：PDO 原生预处理不接受多余占位符，两组条件各用各的参数名
-    $lessCond = $asc
-        ? '(i.created_at < :lo_t OR (i.created_at = :lo_t2 AND i.id < :lo_id))'
-        : '(i.created_at > :lo_t OR (i.created_at = :lo_t2 AND i.id > :lo_id))';
-    $moreCond = $asc
-        ? '(i.created_at > :hi_t OR (i.created_at = :hi_t2 AND i.id > :hi_id))'
-        : '(i.created_at < :hi_t OR (i.created_at = :hi_t2 AND i.id < :hi_id))';
-    $lessParams = [':lo_t' => $createdAt, ':lo_t2' => $createdAt, ':lo_id' => $id];
-    $moreParams = [':hi_t' => $createdAt, ':hi_t2' => $createdAt, ':hi_id' => $id];
-    $sortAsc = $asc ? 'ASC' : 'DESC';
-    $sortDesc = $asc ? 'DESC' : 'ASC';
+    // 排序规则与列表保持同一套（列表改了这里要跟着改）
+    $sortField = (string) qly_input('sortField', 'createdAt');
+    if ($sortField === 'priority') {
+        $orderBy = "FIELD(i.priority, '紧急', '高', '中', '低') ASC, i.id ASC";
+    } elseif ($sortField === 'releasedAt') {
+        $dir = strtoupper((string) qly_input('sortOrder', 'DESC')) === 'ASC' ? 'ASC' : 'DESC';
+        $orderBy = 'i.released_at ' . $dir . ', i.id ' . $dir;
+    } else {
+        $explicit = strtoupper((string) qly_input('sortOrder', ''));
+        if ($explicit === 'ASC' || $explicit === 'DESC') {
+            $dir = $explicit;
+        } else {
+            $dir = $statusFilter === '评审池' ? 'ASC' : 'DESC';
+        }
+        $orderBy = 'i.created_at ' . $dir . ', i.id ' . $dir;
+    }
 
-    $pick = static function (string $cond, array $condParams, string $sort) use ($where, $params): ?array {
-        $r = qly_one(
-            'SELECT i.id, i.req_no, i.title, i.status' . qly_devreq_base_from() . $where . ' AND ' . $cond
-            . ' ORDER BY i.created_at ' . $sort . ', i.id ' . $sort . ' LIMIT 1',
-            array_merge($params, $condParams)
+    // 1) 先用「列表筛选 + 可见范围」取整段顺序（只取 id/标题等轻字段）
+    $rows = qly_all(
+        'SELECT i.id, i.req_no, i.title, i.status FROM `dev_request` i'
+        . ' WHERE 1=1' . $filterWhere . $scopeWhere
+        . ' ORDER BY ' . $orderBy . ' LIMIT 5000',
+        array_merge($filterParams, $scopeParams)
+    );
+    $pos = false;
+    foreach ($rows as $i => $r) {
+        if ((int) $r['id'] === $id) {
+            $pos = $i;
+            break;
+        }
+    }
+
+    // 2) 兜底：当前需求不在筛选结果里（直接打开链接 / 状态刚变）→ 用同状态集合
+    if ($pos === false) {
+        $rows = qly_all(
+            'SELECT i.id, i.req_no, i.title, i.status FROM `dev_request` i'
+            . ' WHERE i.status = :fb_st' . $scopeWhere
+            . ' ORDER BY i.created_at ' . ($statusFilter === '评审池' ? 'ASC' : 'DESC')
+            . ', i.id ' . ($statusFilter === '评审池' ? 'ASC' : 'DESC') . ' LIMIT 5000',
+            array_merge([':fb_st' => (string) $row['status']], $scopeParams)
         );
-        return $r ? ['id' => (int) $r['id'], 'reqNo' => (string) $r['req_no'], 'title' => (string) $r['title'], 'status' => (string) $r['status']] : null;
+        foreach ($rows as $i => $r) {
+            if ((int) $r['id'] === $id) {
+                $pos = $i;
+                break;
+            }
+        }
+    }
+
+    $toPublic = static function (?array $r): ?array {
+        if (!is_array($r)) {
+            return null;
+        }
+        return [
+            'id' => (int) $r['id'],
+            'reqNo' => (string) $r['req_no'],
+            'title' => (string) $r['title'],
+            'status' => (string) $r['status'],
+        ];
     };
 
-    $total = (int) qly_val('SELECT COUNT(*)' . qly_devreq_base_from() . $where, $params);
-    $beforeCount = (int) qly_val('SELECT COUNT(*)' . qly_devreq_base_from() . $where . ' AND ' . $lessCond, array_merge($params, $lessParams));
+    $total = count($rows);
+    $prev = ($pos !== false && $pos > 0) ? $toPublic($rows[$pos - 1]) : null;
+    $next = ($pos !== false && $pos + 1 < $total) ? $toPublic($rows[$pos + 1]) : null;
 
     qly_ok([
-        'index' => $beforeCount + 1,
+        'index' => $pos === false ? 0 : $pos + 1,
         'total' => $total,
-        'prev' => $pick($lessCond, $lessParams, $sortDesc),
-        'next' => $pick($moreCond, $moreParams, $sortAsc),
+        'prev' => $prev,
+        'next' => $next,
     ]);
 }
 

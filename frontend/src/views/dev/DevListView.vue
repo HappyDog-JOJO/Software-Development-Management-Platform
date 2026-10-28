@@ -472,8 +472,20 @@ function onSortChange(payload: { prop: string; order: string | null }): void {
   void load()
 }
 
+/**
+ * 打开详情：把当前列表的筛选与排序一并带进 URL，
+ * 详情页的「上一条 / 下一条」据此在「同一个列表」里翻页。
+ */
 function goDetail(row: DevRequest): void {
-  void router.push(`/dev/reqs/${row.id}`)
+  // from=list：告诉详情页「这是从列表进来的」，口径以列表为准（哪怕列表没有任何筛选）
+  const query: Record<string, string> = { from: 'list' }
+  const built = buildQuery() as Record<string, unknown>
+  for (const [k, v] of Object.entries(built)) {
+    if (v !== undefined && v !== null && v !== '') {
+      query[k] = String(v)
+    }
+  }
+  void router.push({ path: `/dev/reqs/${row.id}`, query })
 }
 
 /* —— 优先级行内调整（评审委员 / 产品经理 / 管理员；任意环节可调） —— */
