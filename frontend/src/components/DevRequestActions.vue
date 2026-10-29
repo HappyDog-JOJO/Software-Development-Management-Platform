@@ -423,9 +423,7 @@ const syncDefaultDescription = computed(() => {
           <el-select v-model="rejectForm.priority" style="width: 160px">
             <el-option v-for="p in DEV_PRIORITY_OPTIONS" :key="p" :label="p" :value="p" />
           </el-select>
-          <span class="review-priority__tip">
-            进需求池后按优先级排序（当前：{{ props.req.priority }}），不改就保持原值
-          </span>
+          <span class="review-priority__tip">不改则保持原值</span>
         </div>
 
         <div class="comment-label">
@@ -467,21 +465,26 @@ const syncDefaultDescription = computed(() => {
 </template>
 
 <style scoped>
-/* 评审通过时的优先级选择行 */
+/* 评审通过时的优先级选择行（标签不折行，说明保持单行） */
 .review-priority {
   display: flex;
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
+  white-space: nowrap;
 }
 
 .review-priority .comment-label {
   margin-bottom: 0;
+  flex: 0 0 auto;
 }
 
 .review-priority__tip {
   font-size: 12px;
   color: var(--color-text-secondary);
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .comment-label {
