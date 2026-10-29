@@ -702,6 +702,8 @@ function qly_api_devreqs_review(): void
     $id = qly_input_int('id', 0);
     $action = (string) qly_input('action', '');
     $comment = trim((string) qly_input('comment', ''));
+    // 评审通过时可顺手定优先级（不传则保持原值）
+    $priorityInput = trim((string) qly_input('priority', ''));
     $attachments = qly_input('attachments', []);
     $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
     if (!$row) {
@@ -714,7 +716,12 @@ function qly_api_devreqs_review(): void
     $now = date('Y-m-d H:i:s');
 
     if ($action === '通过') {
-        qly_update('dev_request', $id, [
+        // 优先级：评审通过时可以定档（进需求池后按优先级排序，所以这里定比列表里改更顺手）
+        $newPriority = $priorityInput !== '' ? $priorityInput : (string) $row['priority'];
+        if (!in_array($newPriority, qly_devreq_priorities(), true)) {
+            qly_fail('优先级不合法');
+        }
+        $update = [
             'status' => '需求池',
             'review_pending' => 0,
             'reviewer_id' => (int) $user['id'],
@@ -723,8 +730,24 @@ function qly_api_devreqs_review(): void
             'reviewed_at' => $now,
             'pool_at' => $now,
             'updated_at' => $now,
-        ]);
-        qly_log($user, '需求评审', (string) $row['req_no'], '评审通过：' . $row['title'] . ($comment !== '' ? '，意见：' . mb_substr($comment, 0, 80) : ''));
+        ];
+        if ($newPriority !== (string) $row['priority']) {
+            $update['priority'] = $newPriority;
+        }
+        qly_update('dev_request', $id, $update);
+        // 优先级有变化 → 记一条字段级变更（时间线可看改前/改后）
+        if ($newPriority !== (string) $row['priority']) {
+            qly_devreq_save_change($user, $id, [[
+                'field' => 'priority',
+                'label' => '优先级',
+                'before' => (string) $row['priority'],
+                'after' => $newPriority,
+            ]]);
+        }
+        $priorityNote = $newPriority !== (string) $row['priority']
+            ? '，优先级：' . $row['priority'] . ' → ' . $newPriority
+            : '';
+        qly_log($user, '需求评审', (string) $row['req_no'], '评审通过：' . $row['title'] . $priorityNote . ($comment !== '' ? '，意见：' . mb_substr($comment, 0, 80) : ''));
         qly_notify([(int) $row['submitter_id']], '您的需求已评审通过', '需求 ' . $row['req_no'] . ' 已进入需求池，等待开发工程师认领开发', '/dev/reqs/' . $id, (int) $user['id']);
         qly_notify(
             qly_notify_user_ids_by_roles([QLY_ROLE_PM]),

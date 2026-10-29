@@ -26,7 +26,8 @@ import {
 import { canDevReq, canReviewReq, isAdmin } from '@/constants/user'
 import AttachmentUpload from '@/components/AttachmentUpload.vue'
 import PingcodeSyncDialog from '@/components/PingcodeSyncDialog.vue'
-import type { Attachment, DevRequest, DevStatus } from '@/types'
+import { DEV_PRIORITY_OPTIONS } from '@/constants/devreq'
+import type { Attachment, DevPriority, DevRequest, DevStatus } from '@/types'
 
 const props = defineProps<{ req: DevRequest; link?: boolean }>()
 const emit = defineEmits<{ (e: 'refresh'): void }>()
@@ -216,7 +217,12 @@ async function onEditSubmit(): Promise<void> {
 /* —— 评审弹窗：通过（备注选填）/ 待定 / 驳回（后两者备注必填）
  *    通过也要能写备注：验收标准、范围说明、需要开发注意的点，都记在 review_comment 上，
  *    详情页「评审意见」会展示，提交人与开发也能看到。 —— */
-const rejectForm = reactive({ comment: '', attachments: [] as Attachment[] })
+/** 评审通过时可同时定优先级（进需求池按优先级排序，评审时定更顺手） */
+const rejectForm = reactive({
+  comment: '',
+  attachments: [] as Attachment[],
+  priority: props.req.priority as DevPriority,
+})
 /** 当前弹窗是评审通过 / 评审驳回 / 评审待定 */
 const rejectMode = ref<'pass' | 'reject' | 'pending'>('reject')
 
@@ -224,6 +230,8 @@ function openReview(mode: 'pass' | 'reject' | 'pending'): void {
   rejectMode.value = mode
   rejectForm.comment = ''
   rejectForm.attachments = []
+  // 默认沿用当前优先级（列表里调过的值也带过来）
+  rejectForm.priority = props.req.priority
   dialogKind.value = 'reject'
   dialogVisible.value = true
 }
@@ -246,7 +254,10 @@ async function onRejectSubmit(): Promise<void> {
   submitting.value = true
   try {
     if (rejectMode.value === 'pass') {
-      await reviewDevRequest(props.req.id, '通过', { comment: rejectForm.comment.trim() })
+      await reviewDevRequest(props.req.id, '通过', {
+        comment: rejectForm.comment.trim(),
+        priority: rejectForm.priority,
+      })
       ElMessage.success('评审通过，需求已进入需求池')
     } else if (rejectMode.value === 'pending') {
       await reviewDevRequest(props.req.id, '待定', { comment: rejectForm.comment.trim() })
@@ -406,6 +417,17 @@ const syncDefaultDescription = computed(() => {
               : '评审驳回后该需求将直接作废（终态），提交人如仍需要请重新提交新需求。'"
           style="margin-bottom: 12px"
         />
+        <!-- 评审通过：可顺手定优先级（默认沿用当前值） -->
+        <div v-if="rejectMode === 'pass'" class="review-priority">
+          <div class="comment-label">优先级</div>
+          <el-select v-model="rejectForm.priority" style="width: 160px">
+            <el-option v-for="p in DEV_PRIORITY_OPTIONS" :key="p" :label="p" :value="p" />
+          </el-select>
+          <span class="review-priority__tip">
+            进需求池后按优先级排序（当前：{{ props.req.priority }}），不改就保持原值
+          </span>
+        </div>
+
         <div class="comment-label">
           {{ rejectMode === 'pass' ? '评审备注（选填）' : rejectMode === 'pending' ? '待定备注（必填）' : '驳回原因（必填）' }}
         </div>
@@ -445,6 +467,23 @@ const syncDefaultDescription = computed(() => {
 </template>
 
 <style scoped>
+/* 评审通过时的优先级选择行 */
+.review-priority {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.review-priority .comment-label {
+  margin-bottom: 0;
+}
+
+.review-priority__tip {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
 .comment-label {
   margin-bottom: 6px;
   font-size: 13px;

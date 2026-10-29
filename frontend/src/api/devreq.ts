@@ -1,6 +1,7 @@
 import { http } from './request'
 import type {
   Attachment,
+  DevPriority,
   DevQuery,
   DevRequest,
   DevRequestDetail,
@@ -57,7 +58,7 @@ export function deleteDevRequest(id: number): Promise<null> {
 export function reviewDevRequest(
   id: number,
   action: '通过' | '待定' | '驳回',
-  payload: { comment?: string; attachments?: DevAttachmentPayload[] } = {},
+  payload: { comment?: string; attachments?: DevAttachmentPayload[]; priority?: DevPriority } = {},
 ): Promise<null> {
   return http.post<null>('/api.php?r=devreqs/review', { id, action, ...payload })
 }
