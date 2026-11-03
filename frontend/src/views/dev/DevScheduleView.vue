@@ -5,6 +5,7 @@
  * - 排好期的需求会出现在「任务池」，由开发工程师在那里领任务进入开发中心
  * - 一条需求只能排一次：已排期的需求不再出现在「添加排期」的候选里（plan_release_date 非空即已排期）
  * - 列表内可直接改 / 清空预计上线时间，也支持勾选后批量设置同一天
+ * - 排期精度两种：精确到日（2026-11-17）与只到月（2026-11）——点单元格前的「日 / 月」小标签即可切换
  * - 已上线的需求自动移出排期（改由「发布上线」页承接）
  */
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -27,6 +28,40 @@ const weekEnd = (() => {
   d.setDate(d.getDate() + 6)
   return fmtDate(d)
 })()
+
+/** 排期精度：day=精确到日，month=只到月（后端把月排期存成该月 1 日） */
+type PlanPrecision = 'day' | 'month'
+const thisMonth = today.slice(0, 7)
+
+/** 某月的最后一天（YYYY-MM-DD）：月排期用它判断逾期 / 本周 */
+function lastDayOfMonth(monthKey: string): string {
+  const [y, m] = monthKey.split('-').map(Number)
+  return fmtDate(new Date(y, m, 0))
+}
+
+function isMonthRow(row: DevRequest): boolean {
+  return row.planReleasePrecision === 'month'
+}
+
+/** 单元格里给 picker 的值：月排期 YYYY-MM，日排期 YYYY-MM-DD */
+function planCellValue(row: DevRequest): string {
+  const d = row.planReleaseDate ?? ''
+  if (!d) return ''
+  return isMonthRow(row) ? d.slice(0, 7) : d.slice(0, 10)
+}
+
+/** 排期展示文案：月排期显示 2026-11，日排期显示 2026-11-17 */
+function planTextOf(date: string, precision: PlanPrecision): string {
+  if (!date) return ''
+  return precision === 'month' ? date.slice(0, 7) : date.slice(0, 10)
+}
+
+/** 这条需求的「实际到期日」：月排期按当月月末算 */
+function planDueDate(row: DevRequest): string {
+  const d = row.planReleaseDate ?? ''
+  if (!d) return ''
+  return isMonthRow(row) ? lastDayOfMonth(d.slice(0, 7)) : d.slice(0, 10)
+}
 
 const loading = ref(false)
 const saving = ref(false)
@@ -53,6 +88,8 @@ const filters = reactive<{
 const selectedIds = ref<number[]>([])
 /** 批量设置的日期（与行内编辑分开，避免误改） */
 const batchDate = ref('')
+/** 批量设置的精度：默认精确到日 */
+const batchPrecision = ref<PlanPrecision>('day')
 
 function buildQuery(): Record<string, string | number> {
   const q: Record<string, string | number> = {
@@ -114,11 +151,15 @@ function goDetail(row: DevRequest): void {
 }
 
 function isOverdue(row: DevRequest): boolean {
-  return !!row.planReleaseDate && row.planReleaseDate < today
+  // 月排期整月内都不算逾期，过了月末才算
+  return !!row.planReleaseDate && planDueDate(row) < today
 }
 
 function isThisWeek(row: DevRequest): boolean {
-  return !!row.planReleaseDate && row.planReleaseDate >= today && row.planReleaseDate <= weekEnd
+  const d = row.planReleaseDate ?? ''
+  if (!d) return false
+  // 月排期只要和「今天起 7 天」有交集就算本周：结束日 >= 今天 且 起始日 <= 周末
+  return planDueDate(row) >= today && d <= weekEnd
 }
 
 function rowClass({ row }: { row: DevRequest }): string {
@@ -128,6 +169,24 @@ function rowClass({ row }: { row: DevRequest }): string {
 /** 预期日期不能早于今天（后端二次校验） */
 function disabledDate(d: Date): boolean {
   return fmtDate(d) < today
+}
+
+/** 月选择器：早于当月的月份不可选 */
+function disabledMonth(d: Date): boolean {
+  return fmtDate(d).slice(0, 7) < thisMonth
+}
+
+/** 切换精度时把已选值换算成对应格式，避免留下不合法的旧值 */
+function convertPlanValue(v: string, to: PlanPrecision): string {
+  if (!v) return ''
+  if (to === 'month') return v.slice(0, 7)
+  // 月 → 日：落在该月 1 日；若已经过去就顺延到今天
+  const first = v.slice(0, 7) + '-01'
+  return first < today ? today : first
+}
+
+function onBatchPrecisionChange(): void {
+  batchDate.value = convertPlanValue(batchDate.value, batchPrecision.value)
 }
 
 /** 统一提交：date 为空字符串 = 取消排期 */
@@ -153,7 +212,8 @@ async function saveDates(ids: number[], date: string, okTip: string): Promise<vo
 /** 行内改日期 */
 async function onRowDate(row: DevRequest, v: string | null): Promise<void> {
   const date = v ?? ''
-  if (date === (row.planReleaseDate ?? '')) return
+  // 与当前展示值比（月排期是 YYYY-MM），没变就不提交
+  if (date === planCellValue(row)) return
   if (!date) {
     await ElMessageBox.confirm(
       '清空后这条需求会回到「可排期」候选里，之后可以重新安排。确定取消这条排期吗？',
@@ -164,6 +224,19 @@ async function onRowDate(row: DevRequest, v: string | null): Promise<void> {
     return
   }
   await saveDates([row.id], date, '预计上线时间已保存')
+}
+
+/** 切换单条需求的排期精度：日 ⇄ 月（后端按传参格式判断精度） */
+async function onTogglePrecision(row: DevRequest): Promise<void> {
+  const d = row.planReleaseDate ?? ''
+  if (!d) return
+  if (isMonthRow(row)) {
+    // 月 → 日：落到该月 1 日；已经过去就顺延到今天
+    const first = d.slice(0, 7) + '-01'
+    await saveDates([row.id], first < today ? today : first, '已改为精确到日')
+  } else {
+    await saveDates([row.id], d.slice(0, 7), '已改为只到月')
+  }
 }
 
 /** 列表「取消排期」 */
@@ -186,8 +259,10 @@ async function onBatchSet(): Promise<void> {
     ElMessage.warning('请先选择预计上线时间')
     return
   }
+  const batchText = planTextOf(batchDate.value, batchPrecision.value)
+    + (batchPrecision.value === 'month' ? '（只到月）' : '')
   await ElMessageBox.confirm(
-    '把勾选的 ' + selectedIds.value.length + ' 条需求的预计上线时间统一设为 ' + batchDate.value + '？',
+    '把勾选的 ' + selectedIds.value.length + ' 条需求的预计上线时间统一设为 ' + batchText + '？',
     '批量设置上线时间',
     { confirmButtonText: '确定', cancelButtonText: '取消', type: 'info' },
   )
@@ -204,6 +279,12 @@ const candPage = ref(1)
 const candPageSize = ref(10)
 const candSelection = ref<DevRequest[]>([])
 const newDate = ref('')
+/** 添加排期时选的精度：默认精确到日 */
+const newPrecision = ref<PlanPrecision>('day')
+
+function onNewPrecisionChange(): void {
+  newDate.value = convertPlanValue(newDate.value, newPrecision.value)
+}
 const candFilters = reactive<{ keyword: string; priority: DevPriority | '' }>({
   keyword: '',
   priority: '',
@@ -232,6 +313,7 @@ function openAdd(): void {
   candPageSize.value = 10
   candSelection.value = []
   newDate.value = ''
+  newPrecision.value = 'day'
   candFilters.keyword = ''
   candFilters.priority = ''
   void loadCandidates()
@@ -258,7 +340,7 @@ async function onConfirmAdd(): Promise<void> {
     return
   }
   if (!newDate.value) {
-    ElMessage.warning('请选择预计上线时间')
+    ElMessage.warning(newPrecision.value === 'month' ? '请选择预计上线月份' : '请选择预计上线时间')
     return
   }
   await saveDates(ids, newDate.value, '已加入排期')
@@ -354,12 +436,16 @@ onMounted(() => {
       <div class="toolbar toolbar--actions-only">
         <div class="toolbar__actions">
           <el-button type="primary" @click="openAdd">添加排期</el-button>
+          <el-select v-model="batchPrecision" style="width: 108px" @change="onBatchPrecisionChange">
+            <el-option label="精确到日" value="day" />
+            <el-option label="只到月" value="month" />
+          </el-select>
           <el-date-picker
             v-model="batchDate"
-            type="date"
-            placeholder="批量设置上线时间"
-            value-format="YYYY-MM-DD"
-            :disabled-date="disabledDate"
+            :type="batchPrecision === 'month' ? 'month' : 'date'"
+            :placeholder="batchPrecision === 'month' ? '批量设置上线月份' : '批量设置上线时间'"
+            :value-format="batchPrecision === 'month' ? 'YYYY-MM' : 'YYYY-MM-DD'"
+            :disabled-date="batchPrecision === 'month' ? disabledMonth : disabledDate"
             style="width: 176px"
           />
           <el-button :disabled="!selectedCount || !batchDate" :loading="saving" @click="onBatchSet">
@@ -410,16 +496,30 @@ onMounted(() => {
           </template>
         </el-table-column>
 
-        <el-table-column label="预计上线时间" width="204" align="center">
+        <el-table-column label="预计上线时间" width="260" align="center">
           <template #default="{ row }">
             <div class="plan-cell">
+              <el-tooltip
+                :content="isMonthRow(row) ? '只排到月（整月内上线），点击改为精确到日' : '精确到日，点击改为只到月'"
+                placement="top"
+              >
+                <el-tag
+                  class="plan-cell__mode"
+                  size="small"
+                  effect="plain"
+                  :type="isMonthRow(row) ? 'info' : 'primary'"
+                  @click="onTogglePrecision(row)"
+                >
+                  {{ isMonthRow(row) ? '月' : '日' }}
+                </el-tag>
+              </el-tooltip>
               <el-date-picker
-                :model-value="row.planReleaseDate"
-                type="date"
-                placeholder="设置日期"
-                value-format="YYYY-MM-DD"
-                :disabled-date="disabledDate"
-                style="width: 150px"
+                :model-value="planCellValue(row)"
+                :type="isMonthRow(row) ? 'month' : 'date'"
+                :placeholder="isMonthRow(row) ? '设置月份' : '设置日期'"
+                :value-format="isMonthRow(row) ? 'YYYY-MM' : 'YYYY-MM-DD'"
+                :disabled-date="isMonthRow(row) ? disabledMonth : disabledDate"
+                style="width: 138px"
                 @update:model-value="(v: string | null) => onRowDate(row, v)"
               />
               <el-tag v-if="isOverdue(row)" type="danger" size="small" effect="plain">逾期</el-tag>
@@ -542,15 +642,21 @@ onMounted(() => {
 
       <div class="add-date">
         <span class="add-date__label">预计上线时间</span>
+        <el-select v-model="newPrecision" style="width: 108px" @change="onNewPrecisionChange">
+          <el-option label="精确到日" value="day" />
+          <el-option label="只到月" value="month" />
+        </el-select>
         <el-date-picker
           v-model="newDate"
-          type="date"
-          placeholder="选择预计上线日期"
-          value-format="YYYY-MM-DD"
-          :disabled-date="disabledDate"
+          :type="newPrecision === 'month' ? 'month' : 'date'"
+          :placeholder="newPrecision === 'month' ? '选择预计上线月份' : '选择预计上线日期'"
+          :value-format="newPrecision === 'month' ? 'YYYY-MM' : 'YYYY-MM-DD'"
+          :disabled-date="newPrecision === 'month' ? disabledMonth : disabledDate"
           style="width: 180px"
         />
-        <span class="add-date__hint">已选 {{ candSelection.length }} 条，确定后统一写入同一天</span>
+        <span class="add-date__hint">
+          已选 {{ candSelection.length }} 条，确定后统一写入{{ newPrecision === 'month' ? '同一个月（只到月）' : '同一天' }}
+        </span>
       </div>
 
       <template #footer>
@@ -656,6 +762,15 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   gap: 6px;
+}
+
+/* 精度标签：点击在「日 / 月」之间切换，做得小一点不抢日期 */
+.plan-cell__mode {
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 5px;
+  font-size: 11px;
+  cursor: pointer;
 }
 
 /* 逾期行：浅红底，一眼能扫到 */

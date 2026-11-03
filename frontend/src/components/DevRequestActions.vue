@@ -294,7 +294,7 @@ async function onWithdraw(): Promise<void> {
   // 撤回后不再是「评审通过」：已排期的需求会一并清空排期（后端同步处理）
   const planHint =
     props.req.planReleaseDate && (target === '需求池' || target === '评审池')
-      ? `该需求已排期（预计上线 ${props.req.planReleaseDate}），撤回会一并清空排期。`
+      ? `该需求已排期（预计上线 ${props.req.planReleasePrecision === 'month' ? props.req.planReleaseDate.slice(0, 7) : props.req.planReleaseDate}），撤回会一并清空排期。`
       : ''
   await ElMessageBox.confirm(
     `确定将需求「${props.req.title}」的处理进度撤回到「${target}」吗？撤回后相关登记会同步回退，并通知提交人与开发工程师。${planHint}${pcHint}`,

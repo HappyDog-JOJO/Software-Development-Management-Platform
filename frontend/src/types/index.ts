@@ -500,6 +500,8 @@ export interface DevRequest {
   releasedBy: string | null
   /** 预计上线时间（在排期池设置；null = 未排期） */
   planReleaseDate: string | null
+  /** 排期精度：day=精确到日；month=只到月（此时 planReleaseDate 存该月 1 日） */
+  planReleasePrecision?: 'day' | 'month'
   /** 排期设置人（姓名快照） */
   planReleaseBy: string | null
   /** 排期设置时间 */

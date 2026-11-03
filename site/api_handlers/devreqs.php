@@ -99,6 +99,8 @@ function qly_devreq_row_public(array $r): array
         'planReleaseDate' => $r['plan_release_date'] ?? null,
         'planReleaseBy' => $r['plan_release_by'] ?? null,
         'planReleaseAt' => $r['plan_release_at'] ?? null,
+        // 排期精度：day=精确到日；month=只到月（plan_release_date 存该月 1 日）
+        'planReleasePrecision' => qly_devreq_plan_precision($r['plan_release_precision'] ?? 'day'),
         'pingcodeTaskId' => $r['pingcode_task_id'] ?? null,
         'pingcodeTaskNo' => $r['pingcode_task_no'] ?? null,
         'pingcodeTaskUrl' => $r['pingcode_task_url'] ?? null,
@@ -247,8 +249,8 @@ function qly_api_devreqs_list(): void
         $order = 'i.released_at';
         $dir = strtoupper((string) qly_input('sortOrder', 'DESC')) === 'ASC' ? 'ASC' : 'DESC';
     } elseif ($sortField === 'planReleaseDate') {
-        // 任务池：按预计上线时间排序（默认先到期先做）
-        $order = 'i.plan_release_date';
+        // 任务池：按预计上线时间排序（默认先到期先做；月排期按当月月末算）
+        $order = qly_devreq_plan_effective('i');
         $dir = strtoupper((string) qly_input('sortOrder', 'ASC')) === 'DESC' ? 'DESC' : 'ASC';
     } else {
         $order = 'i.created_at';
@@ -324,7 +326,7 @@ function qly_api_devreqs_neighbors(): void
         $orderBy = 'i.released_at ' . $dir . ', i.id ' . $dir;
     } elseif ($sortField === 'planReleaseDate') {
         $dir = strtoupper((string) qly_input('sortOrder', 'ASC')) === 'DESC' ? 'DESC' : 'ASC';
-        $orderBy = 'i.plan_release_date ' . $dir . ', i.id ' . $dir;
+        $orderBy = qly_devreq_plan_effective('i') . ' ' . $dir . ', i.id ' . $dir;
     } else {
         $explicit = strtoupper((string) qly_input('sortOrder', ''));
         if ($explicit === 'ASC' || $explicit === 'DESC') {
@@ -885,6 +887,33 @@ function qly_api_devreqs_priority(): void
 
 /* ==================== 排期池（原「开发排期」） ==================== */
 
+/** 排期精度归一：只有 month 算「只到月」，其它历史/脏值一律按「到日」处理 */
+function qly_devreq_plan_precision($v): string
+{
+    return (string) $v === 'month' ? 'month' : 'day';
+}
+
+/**
+ * 排期的展示文案：只到月的显示「2026-11（月）」，精确到日的显示「2026-11-17」。
+ * 变更记录与操作日志都用它，这样同一份数据在时间线上也能看出精度差异。
+ */
+function qly_devreq_plan_text(string $date, string $precision): string
+{
+    if ($date === '') {
+        return '';
+    }
+    return $precision === 'month' ? substr($date, 0, 7) . '（月）' : $date;
+}
+
+/**
+ * 排期排序用的「实际到期日」：月排期按当月月末（整月内都还能上线），日排期按当天。
+ * 用于排期列表排序、概览卡（本周 / 逾期）统计。
+ */
+function qly_devreq_plan_effective(string $alias = 'i'): string
+{
+    return "(CASE WHEN {$alias}.plan_release_precision = 'month' THEN LAST_DAY({$alias}.plan_release_date) ELSE {$alias}.plan_release_date END)";
+}
+
 /** 能否编排开发排期：产品经理 / 管理员（排期属于计划工作，评审委员只负责评审） */
 function qly_can_schedule_req(array $user): bool
 {
@@ -954,14 +983,15 @@ function qly_api_devreqs_schedule(): void
     $dir = strtoupper((string) qly_input('sortOrder', 'ASC')) === 'DESC' ? 'DESC' : 'ASC';
     $rows = qly_all(
         qly_devreq_base_select() . $base . $scopeWhere
-        . ' ORDER BY i.plan_release_date ' . $dir . ", FIELD(i.priority, '紧急', '高', '中', '低') ASC, i.id ASC"
+        . ' ORDER BY ' . qly_devreq_plan_effective('i') . ' ' . $dir . ", FIELD(i.priority, '紧急', '高', '中', '低') ASC, i.id ASC"
         . ' LIMIT ' . $pageSize . ' OFFSET ' . $offset,
         $params
     );
     $sum = qly_one(
         'SELECT COUNT(*) AS total,'
-        . ' SUM(CASE WHEN i.plan_release_date < CURDATE() THEN 1 ELSE 0 END) AS overdue,'
-        . ' SUM(CASE WHEN i.plan_release_date >= CURDATE() AND i.plan_release_date <= DATE_ADD(CURDATE(), INTERVAL 6 DAY) THEN 1 ELSE 0 END) AS thisWeek'
+        // 逾期 / 本周都按「实际到期日」判断：月排期到月末才算逾期，整月都还在本周窗口内就计数
+        . ' SUM(CASE WHEN ' . qly_devreq_plan_effective('i') . ' < CURDATE() THEN 1 ELSE 0 END) AS overdue,'
+        . ' SUM(CASE WHEN ' . qly_devreq_plan_effective('i') . ' >= CURDATE() AND i.plan_release_date <= DATE_ADD(CURDATE(), INTERVAL 6 DAY) THEN 1 ELSE 0 END) AS thisWeek'
         . $base . $scopeWhere,
         $params
     );
@@ -990,17 +1020,37 @@ function qly_api_devreqs_schedule_set(): void
     if (!qly_can_schedule_req($user)) {
         qly_forbidden('仅产品经理或管理员可编排排期');
     }
-    $date = trim((string) qly_input('planReleaseDate', ''));
-    if ($date !== '') {
-        if (!preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/', $date)) {
-            qly_fail('预计上线时间格式应为 YYYY-MM-DD');
-        }
-        [$y, $m, $d] = array_map('intval', explode('-', $date));
-        if (!checkdate($m, $d, $y)) {
-            qly_fail('预计上线时间不是有效日期');
-        }
-        if ($date < date('Y-m-d')) {
-            qly_fail('预计上线时间不能早于今天');
+    // 排期精度：传 YYYY-MM 表示「只到月」，传 YYYY-MM-DD 表示「精确到日」。
+    // 月排期统一存成该月 1 日，展示与逾期判断再按 plan_release_precision 还原。
+    $dateInput = trim((string) qly_input('planReleaseDate', ''));
+    $date = '';
+    $precision = 'day';
+    if ($dateInput !== '') {
+        if (preg_match('/^([0-9]{4})-([0-9]{2})$/', $dateInput, $mm)) {
+            $my = (int) $mm[1];
+            $mon = (int) $mm[2];
+            if (!checkdate($mon, 1, $my)) {
+                qly_fail('预计上线月份不是有效月份');
+            }
+            $monthKey = sprintf('%04d-%02d', $my, $mon);
+            if ($monthKey < date('Y-m')) {
+                qly_fail('预计上线月份不能早于本月');
+            }
+            $date = $monthKey . '-01';
+            $precision = 'month';
+        } elseif (preg_match('/^([0-9]{4})-([0-9]{2})-([0-9]{2})$/', $dateInput, $dd)) {
+            $date = $dateInput;
+            $y = (int) $dd[1];
+            $m = (int) $dd[2];
+            $d = (int) $dd[3];
+            if (!checkdate($m, $d, $y)) {
+                qly_fail('预计上线时间不是有效日期');
+            }
+            if ($date < date('Y-m-d')) {
+                qly_fail('预计上线时间不能早于今天');
+            }
+        } else {
+            qly_fail('预计上线时间格式应为 YYYY-MM-DD（精确到日）或 YYYY-MM（只到月）');
         }
     }
     $ids = qly_input('ids', null);
@@ -1034,27 +1084,32 @@ function qly_api_devreqs_schedule_set(): void
     foreach ($rows as $row) {
         $id = (int) $row['id'];
         $before = (string) ($row['plan_release_date'] ?? '');
-        if ($before === $date) {
+        $beforePrecision = qly_devreq_plan_precision($row['plan_release_precision'] ?? 'day');
+        // 取消排期时精度不参与比较；设置时「同一天 + 同精度」才算没变化
+        if ($before === $date && ($date === '' || $beforePrecision === $precision)) {
             continue;
         }
         qly_update('dev_request', $id, [
             'plan_release_date' => $date !== '' ? $date : null,
+            'plan_release_precision' => $precision,
             'plan_release_by' => $date !== '' ? $name : null,
             'plan_release_at' => $date !== '' ? $now : null,
             'updated_at' => $now,
         ]);
+        $beforeText = qly_devreq_plan_text($before, $beforePrecision);
+        $afterText = qly_devreq_plan_text($date, $precision);
         qly_devreq_save_change($user, $id, [[
             'field' => 'plan_release_date',
             'label' => '预计上线时间',
-            'before' => $before,
-            'after' => $date,
+            'before' => $beforeText,
+            'after' => $afterText,
         ]]);
         qly_log(
             $user,
             '排期池',
             (string) $row['req_no'],
             ($date !== '' ? '设置预计上线时间：' : '取消排期：') . $row['title']
-                . '（' . ($before !== '' ? $before : '未排期') . ' → ' . ($date !== '' ? $date : '未排期') . '）'
+                . '（' . ($beforeText !== '' ? $beforeText : '未排期') . ' → ' . ($afterText !== '' ? $afterText : '未排期') . '）'
         );
         $changed++;
     }
@@ -1232,10 +1287,12 @@ function qly_api_devreqs_withdraw(): void
     // 撤回后若已不再是「评审通过」状态（退回评审池 / 退回需求池），开发排期一并清空：
     // 从开发中心撤回＝这批活不做了，留着旧日期会让需求带着旧排期直接落进「任务池」，等于没撤回。
     $planDateBefore = (string) ($row['plan_release_date'] ?? '');
+    $planPrecisionBefore = qly_devreq_plan_precision($row['plan_release_precision'] ?? 'day');
     $clearedPlanDate = '';
     if ($planDateBefore !== '' && ($target === '评审池' || $target === '需求池')) {
         $update += [
             'plan_release_date' => null,
+            'plan_release_precision' => 'day',
             'plan_release_by' => null,
             'plan_release_at' => null,
         ];
@@ -1259,14 +1316,14 @@ function qly_api_devreqs_withdraw(): void
         qly_devreq_save_change($user, $id, [[
             'field' => 'plan_release_date',
             'label' => '预计上线时间',
-            'before' => $clearedPlanDate,
+            'before' => qly_devreq_plan_text($clearedPlanDate, $planPrecisionBefore),
             'after' => '',
         ]]);
     }
 
     $logContent = '撤回需求：' . $row['title'] . '（' . $status . ' → ' . $target . '，操作人：' . $name . '）';
     if ($clearedPlanDate !== '') {
-        $logContent .= '；已清空排期（原预计上线：' . $clearedPlanDate . '）';
+        $logContent .= '；已清空排期（原预计上线：' . qly_devreq_plan_text($clearedPlanDate, $planPrecisionBefore) . '）';
     }
     if ($pingcodeDeleted) {
         $logContent .= '；已删除 PingCode 工作项' . ($pcTaskNo !== '' ? '（' . $pcTaskNo . '）' : '');

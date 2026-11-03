@@ -613,8 +613,16 @@ const EXPORT_CELL: Record<string, (r: DevRequest) => string | number> = {
   submitterName: (r) => r.submitterName,
   submitterDepartmentName: (r) => r.submitterDepartmentName || '未分配部门',
   createdAt: (r) => fmtDateTime(r.createdAt),
-  planReleaseDate: (r) => (r.planReleaseDate ? fmtDateTime(r.planReleaseDate).slice(0, 10) : '—'),
+  planReleaseDate: (r) => planText(r),
+  // 排期精度：月排期只导出到月（2026-11），日排期到日
   releasedAt: (r) => fmtDateTime(r.releasedAt),
+}
+
+/** 预计上线时间展示：月排期只到月（2026-11），日排期到日（2026-11-17） */
+function planText(r: DevRequest): string {
+  const d = r.planReleaseDate ?? ''
+  if (!d) return '—'
+  return r.planReleasePrecision === 'month' ? d.slice(0, 7) : fmtDateTime(d).slice(0, 10)
 }
 
 /** 导出列宽（按列 key）：编号/标题宽一些，其余按内容常规宽度 */
@@ -1165,7 +1173,7 @@ watch(
 
               <!-- 任务池：预计上线时间（排期池里设置的日期） -->
               <template v-else-if="c.key === 'planReleaseDate'">
-                <span v-if="row.planReleaseDate" class="cell-nowrap">{{ fmtDateTime(row.planReleaseDate).slice(0, 10) }}</span>
+                <span v-if="row.planReleaseDate" class="cell-nowrap">{{ planText(row) }}</span>
                 <span v-else class="text-placeholder">未排期</span>
               </template>
 

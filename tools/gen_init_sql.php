@@ -356,6 +356,7 @@ CREATE TABLE IF NOT EXISTS `dev_request` (
   `plan_release_date` DATE DEFAULT NULL COMMENT '预计上线日期（开发排期；NULL=未排期）',
   `plan_release_by` VARCHAR(60) DEFAULT NULL COMMENT '排期设置人（姓名快照）',
   `plan_release_at` DATETIME DEFAULT NULL COMMENT '排期设置时间',
+  `plan_release_precision` VARCHAR(8) NOT NULL DEFAULT 'day' COMMENT '排期精度：day=精确到日，month=只到月（月排期统一存为该月 1 日）',
   `pingcode_task_id` VARCHAR(64) DEFAULT NULL COMMENT 'PingCode 任务ID（同步后）',
   `pingcode_task_no` VARCHAR(64) DEFAULT NULL COMMENT 'PingCode 任务编号（如 KG-123）',
   `pingcode_task_url` VARCHAR(500) DEFAULT NULL COMMENT 'PingCode 任务链接',

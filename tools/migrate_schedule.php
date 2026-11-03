@@ -9,8 +9,8 @@ declare(strict_types=1);
  * 用法（线上，浏览器执行一次后请用 FTP 删除本文件）：
  *   /tools/migrate_schedule.php?token=<MIGRATE_TOKEN>
  *
- * 只做三件事：加字段 plan_release_date / plan_release_by / plan_release_at，
- * 加索引 idx_devreq_plan。字段或索引已存在则跳过，可重复执行。
+ * 做两件事：加字段 plan_release_date / plan_release_by / plan_release_at /
+ * plan_release_precision，加索引 idx_devreq_plan。字段或索引已存在则跳过，可重复执行。
  * 不动任何现有数据。
  */
 
@@ -28,6 +28,7 @@ function qly_migrate_schedule_run(PDO $pdo): array
         'plan_release_date' => "ALTER TABLE `dev_request` ADD COLUMN `plan_release_date` DATE DEFAULT NULL COMMENT '预计上线日期（开发排期；NULL=未排期）' AFTER `released_by`",
         'plan_release_by' => "ALTER TABLE `dev_request` ADD COLUMN `plan_release_by` VARCHAR(60) DEFAULT NULL COMMENT '排期设置人（姓名快照）' AFTER `plan_release_date`",
         'plan_release_at' => "ALTER TABLE `dev_request` ADD COLUMN `plan_release_at` DATETIME DEFAULT NULL COMMENT '排期设置时间' AFTER `plan_release_by`",
+        'plan_release_precision' => "ALTER TABLE `dev_request` ADD COLUMN `plan_release_precision` VARCHAR(8) NOT NULL DEFAULT 'day' COMMENT '排期精度：day=精确到日，month=只到月（月排期统一存为该月 1 日）' AFTER `plan_release_at`",
     ];
     $st = $pdo->prepare('SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :t AND COLUMN_NAME = :c');
     foreach ($columns as $name => $ddl) {

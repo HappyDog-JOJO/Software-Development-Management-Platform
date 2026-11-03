@@ -338,7 +338,7 @@ watch(reqId, load)
               <!-- 预计上线时间：在排期池排期后才有值；撤回时会一并清空 -->
               <div v-if="detail.planReleaseDate" class="meta-row">
                 <span class="meta-row__label">预计上线</span>
-                <span class="meta-row__value">{{ fmtDate(detail.planReleaseDate) }}<span v-if="detail.planReleaseBy" class="meta-row__sub">排期人：{{ detail.planReleaseBy }}</span></span>
+                <span class="meta-row__value">{{ detail.planReleasePrecision === 'month' ? detail.planReleaseDate.slice(0, 7) + '（只到月）' : fmtDate(detail.planReleaseDate) }}<span v-if="detail.planReleaseBy" class="meta-row__sub">排期人：{{ detail.planReleaseBy }}</span></span>
               </div>
               <div class="meta-row">
                 <span class="meta-row__label">上线时间</span>
