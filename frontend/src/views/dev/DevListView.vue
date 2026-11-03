@@ -778,7 +778,6 @@ watch(
           <el-radio-group
             v-if="showBattleScope"
             v-model="battleScope"
-            size="small"
             @change="onBattleScopeChange"
           >
             <el-radio-button value="mine">我的任务</el-radio-button>
@@ -788,7 +787,6 @@ watch(
           <el-radio-group
             v-if="showScopeSwitch"
             v-model="adminView"
-            size="small"
             @change="onAdminViewChange"
           >
             <el-radio-button value="all">查看全部</el-radio-button>

@@ -179,6 +179,34 @@ body {
   min-height: var(--el-component-size);
 }
 
+/*
+ * 分段按钮（el-radio-button）与同一行的输入框 / 按钮统一尺寸。
+ * 原因：Element Plus 默认 padding:8px 15px → 实际高度约 32px、圆角 4px
+ * （--el-border-radius-base），与相邻 36px 高、8px 圆角的 el-button / el-input 不齐。
+ * 这里让默认尺寸跟随同一套 token；small（表格行内等紧凑场景）与 large 保持 EP 原样。
+ */
+.el-radio-button:not(.el-radio-button--small):not(.el-radio-button--large) .el-radio-button__inner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--el-component-size);
+  padding: 0 16px;
+  font-size: 14px;
+  border-radius: 0;
+}
+
+.el-radio-button:not(.el-radio-button--small):not(.el-radio-button--large):first-child .el-radio-button__inner {
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
+}
+
+.el-radio-button:not(.el-radio-button--small):not(.el-radio-button--large):last-child .el-radio-button__inner {
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+}
+
+.el-radio-button:not(.el-radio-button--small):not(.el-radio-button--large):first-child:last-child .el-radio-button__inner {
+  border-radius: var(--radius-control);
+}
+
 a {
   color: var(--color-primary);
   text-decoration: none;
