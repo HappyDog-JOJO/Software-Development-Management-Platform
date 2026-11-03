@@ -163,6 +163,13 @@ function qly_devreq_filters(): array
         $where .= ' AND i.submitter_id = :mine';
         $params[':mine'] = (int) qly_current_user()['id'];
     }
+    // 提交人筛选（姓名/账号模糊匹配）：我的需求页管理员切「全部需求」时按人查
+    $submitter = trim((string) qly_input('submitter', ''));
+    if ($submitter !== '') {
+        $where .= ' AND (i.submitter_name LIKE :sub1 OR i.submitter_account LIKE :sub2)';
+        $params[':sub1'] = '%' . $submitter . '%';
+        $params[':sub2'] = '%' . $submitter . '%';
+    }
     // 隐藏评审待定的需求（我的需求/评审池开关，默认开启）
     if ((string) qly_input('hidePending', '') === '1') {
         $where .= ' AND i.review_pending = 0';

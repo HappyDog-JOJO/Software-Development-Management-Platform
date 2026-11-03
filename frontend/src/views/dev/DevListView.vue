@@ -232,6 +232,8 @@ const filters = reactive({
   moduleId: undefined as number | undefined,
   /** 负责人筛选（PingCode 成员 id） */
   assigneeId: '' as string,
+  /** 提交人筛选（姓名/账号）：我的需求页管理员查看全部时可用 */
+  submitter: '',
   /** 开发分支筛选（开发中心/发布上线记录页） */
   branch: '',
   /** 上线时间范围（发布上线记录页） */
@@ -241,6 +243,11 @@ const filters = reactive({
 
 /** PingCode 项目成员（用于「负责人」筛选下拉；开发中心/发布上线记录页） */
 const assigneeOptions = ref<PingcodeOption[]>([])
+/**
+ * 是否展示「提交人」筛选：我的需求页在「查看全部」口径下可用。
+ * 「只看我的」时提交人必然是自己，筛选无意义，直接隐藏。
+ */
+const showSubmitter = computed(() => props.mine === true && !scopeMine.value)
 /** 当前页是否展示「负责人」筛选与列：开发中心 + 发布上线记录页 */
 const showAssignee = computed(() => isBattleStage.value || isReleasedStage.value)
 async function loadAssigneeOptions(): Promise<void> {
@@ -472,6 +479,7 @@ const activeFilterCount = computed(() => {
   if (filters.assigneeId) n += 1
   if (filters.releasedStart || filters.releasedEnd) n += 1
   if (filters.keyword) n += 1
+  if (showSubmitter.value && filters.submitter.trim()) n += 1
   return n
 })
 
@@ -503,6 +511,7 @@ function buildQuery(): DevQuery {
     mine: scopeMine.value ? '1' : undefined,
     hidePending: showHidePending.value && hidePending.value ? '1' : undefined,
     keyword: filters.keyword.trim() || undefined,
+    submitter: showSubmitter.value ? filters.submitter.trim() || undefined : undefined,
     priority: filters.priority || undefined,
     moduleId: filters.moduleId,
     assigneeId: showAssignee.value ? filters.assigneeId || undefined : undefined,
@@ -681,6 +690,7 @@ function onSearch(): void {
 
 function onReset(): void {
   filters.keyword = ''
+  filters.submitter = ''
   filters.priority = ''
   filters.status = ''
   filters.moduleId = undefined
@@ -824,6 +834,18 @@ watch(
       </div>
 
       <div v-show="!filterCollapsed" class="filter-inline">
+        <!-- 我的需求页（管理员查看全部时）：按提交人筛选 -->
+        <div v-if="showSubmitter" class="filter-inline__item">
+          <span class="filter-inline__label">提交人</span>
+          <el-input
+            v-model="filters.submitter"
+            placeholder="姓名/账号"
+            style="width: 150px"
+            clearable
+            @keyup.enter="load"
+            @change="load"
+          />
+        </div>
         <div class="filter-inline__item">
           <span class="filter-inline__label">优先级</span>
           <el-select v-model="filters.priority" placeholder="全部优先级" clearable style="width: 132px" @change="load">
