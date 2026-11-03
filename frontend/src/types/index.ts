@@ -498,7 +498,7 @@ export interface DevRequest {
   devDoneAt: string | null
   releasedAt: string | null
   releasedBy: string | null
-  /** 预计上线时间（开发排期；null = 未排期） */
+  /** 预计上线时间（在排期池设置；null = 未排期） */
   planReleaseDate: string | null
   /** 排期设置人（姓名快照） */
   planReleaseBy: string | null
@@ -583,7 +583,7 @@ export interface DevQuery {
   assigneeSelf?: '1'
   /** 开发分支筛选（精确匹配；开发中心 / 发布上线记录页） */
   branch?: string
-  /** 排期状态：scheduled=已加入开发排期（任务池），unscheduled=还没排期（需求池） */
+  /** 排期状态：scheduled=已在排期池排期（任务池），unscheduled=还没排期（需求池） */
   /** 提交人筛选（姓名/账号模糊匹配）：我的需求页管理员查看全部时按人查 */
   submitter?: string
   planState?: 'scheduled' | 'unscheduled'
@@ -593,7 +593,7 @@ export interface DevQuery {
   sortOrder?: 'ASC' | 'DESC'
 }
 
-/** 开发排期概览（已排期 / 本周内 / 已逾期） */
+/** 排期池概览（已排期 / 本周内 / 已逾期） */
 export interface DevScheduleSummary {
   total: number
   thisWeek: number

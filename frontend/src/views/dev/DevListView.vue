@@ -5,7 +5,7 @@
  * - 顶部筛选：可折叠筛选面板（优先级 / 模块 / 状态 / 关键字）
  * - 列宽拖动记忆（colw）+ 列配置（colcfg，显隐与顺序），与问题列表一致
  * - 需求池默认按优先级排序（紧急 > 高 > 中 > 低，同级按提交先后）
- * - 任务池（需求池里已加入开发排期的那部分）默认按预计上线时间正序（先到期先做）
+ * - 任务池（需求池里已在排期池排过期的那部分）默认按预计上线时间正序（先到期先做）
  * - 评审池默认「先来先审」：按提交时间正序（先进池子的排最前），需要时可点表头改排序
  * - 需求池支持导出 Excel：导出列跟随当前展示的列（列配置的显隐与顺序），范围跟随当前筛选
  * - 行内操作按角色与状态动态渲染（文字按钮），操作列固定在最右
@@ -34,7 +34,7 @@ import type { DevPriority, DevQuery, DevRequest, DevStatus } from '@/types'
  * stage   —— 环节（评审池/需求池/开发中心）
  * mine    —— 我的需求
  * released—— 发布上线记录
- * scheduled —— 任务池：需求池里「已加入开发排期」的那部分（开发人员在此领任务）
+ * scheduled —— 任务池：需求池里「已排期（在排期池设置过预计上线时间）」的那部分（开发人员在此领任务）
  */
 const props = defineProps<{
   stage?: DevStatus
@@ -138,7 +138,7 @@ const showStatusColumn = computed(() => !props.stage)
 const isBattleStage = computed(() => props.stage === '开发中心')
 /** 需求池页：只等排期的需求（不再提供「开发」） */
 const isPoolStage = computed(() => props.stage === '需求池' && props.scheduled !== true)
-/** 任务池页：已加入开发排期的需求，开发工程师在这里领任务 */
+/** 任务池页：已在排期池排期的需求，开发工程师在这里领任务 */
 const isTaskPool = computed(() => props.scheduled === true)
 /** 批量勾选适用于任务池/开发中心，且需具备开发权限（开发工程师/管理员） */
 const canBatchDevelop = computed(() => canDevReq(auth.roles))
@@ -207,13 +207,13 @@ const stageDesc = computed(() => {
   }
   // 任务池与需求池共用 stage='需求池'，说明文案不同，故先于 switch 判断
   if (isTaskPool.value) {
-    return '已加入开发排期的需求（按预计上线时间先后排序），开发工程师挑选后点「开发」进入开发中心；未排期的需求请先在「开发排期」设置上线时间。'
+    return '已在「排期池」排好上线时间的需求（按预计上线时间先后排序），开发工程师挑选后点「开发」进入开发中心；未排期的需求请先在「排期池」设置上线时间。'
   }
   switch (props.stage) {
     case '评审池':
       return '所有新需求在此排队等待评审：按提交先后排列（先来先审），通过即进入需求池，待定暂留本池（可再改判），驳回则需求作废。'
     case '需求池':
-      return '评审通过的需求在此集结（按优先级排序），等待产品经理安排开发排期；已加入「开发排期」的需求会移到「任务池」，由开发工程师在那里领任务。'
+      return '评审通过的需求在此集结（按优先级排序），等待产品经理在「排期池」安排上线时间；已排期的需求会移到「任务池」，由开发工程师在那里领任务。'
     case '开发中心':
       return '开发工程师完成开发后点「发布上线」立即上线（开发工程师或管理员，可批量）。'
     case '已上线':
@@ -443,7 +443,7 @@ const emptySubText = computed(() => {
     return '可切换到「全部任务」查看全部开发任务'
   }
   if (isTaskPool.value) {
-    return '需求在「开发排期」设置预计上线时间后，就会出现在任务池里'
+    return '需求在「排期池」设置预计上线时间后，就会出现在任务池里'
   }
   if (isPoolStage.value) {
     return '评审通过的需求会先进入需求池，排期后移到任务池'
@@ -1163,7 +1163,7 @@ watch(
                 <span class="cell-nowrap">{{ fmtDateTime(row.createdAt) }}</span>
               </template>
 
-              <!-- 任务池：预计上线时间（开发排期里设置的日期） -->
+              <!-- 任务池：预计上线时间（排期池里设置的日期） -->
               <template v-else-if="c.key === 'planReleaseDate'">
                 <span v-if="row.planReleaseDate" class="cell-nowrap">{{ fmtDateTime(row.planReleaseDate).slice(0, 10) }}</span>
                 <span v-else class="text-placeholder">未排期</span>

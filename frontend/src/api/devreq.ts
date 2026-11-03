@@ -98,7 +98,7 @@ export function addDevRequestComment(id: number, content: string): Promise<{ id:
   return http.post<{ id: number }>('/api.php?r=devreqs/comment', { id, content })
 }
 
-/* ==================== 开发排期 ==================== */
+/* ==================== 排期池 ==================== */
 
 /** 候选需求（「添加排期」弹窗）：评审通过且尚未上线、且还没排期的需求 */
 export function fetchScheduleCandidates(params: DevQuery = {}): Promise<PageResult<DevRequest>> {

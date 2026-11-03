@@ -335,7 +335,7 @@ watch(reqId, load)
                 <span class="meta-row__label">评审意见</span>
                 <span class="meta-row__value">{{ detail.reviewComment }}</span>
               </div>
-              <!-- 预计上线时间：加入开发排期后才有值；撤回时会一并清空 -->
+              <!-- 预计上线时间：在排期池排期后才有值；撤回时会一并清空 -->
               <div v-if="detail.planReleaseDate" class="meta-row">
                 <span class="meta-row__label">预计上线</span>
                 <span class="meta-row__value">{{ fmtDate(detail.planReleaseDate) }}<span v-if="detail.planReleaseBy" class="meta-row__sub">排期人：{{ detail.planReleaseBy }}</span></span>

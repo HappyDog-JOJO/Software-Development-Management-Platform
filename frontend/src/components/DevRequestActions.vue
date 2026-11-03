@@ -60,7 +60,7 @@ const showReview = computed(
 )
 /**
  * 开发（认领开发）：开发工程师 / 管理员 —— 点击直接进入开发中心。
- * 只有「已加入开发排期」的需求才在任务池里可领；需求池（未排期）不再出现「开发」按钮，
+ * 只有已在「排期池」排期的需求才在任务池里可领；需求池（未排期）不再出现「开发」按钮，
  * 与后端 devreqs/develop 的校验保持一致。
  */
 const showDevelop = computed(
@@ -291,10 +291,10 @@ async function onWithdraw(): Promise<void> {
   const pcHint = props.req.pingcodeTaskId
     ? `该需求已同步到 PingCode（${props.req.pingcodeTaskNo || '工作项'}），撤回会一并删除该 PingCode 工作项（不可恢复）。`
     : ''
-  // 撤回后不再是「评审通过」：已排期的需求会一并清空开发排期（后端同步处理）
+  // 撤回后不再是「评审通过」：已排期的需求会一并清空排期（后端同步处理）
   const planHint =
     props.req.planReleaseDate && (target === '需求池' || target === '评审池')
-      ? `该需求已排期（预计上线 ${props.req.planReleaseDate}），撤回会一并清空开发排期。`
+      ? `该需求已排期（预计上线 ${props.req.planReleaseDate}），撤回会一并清空排期。`
       : ''
   await ElMessageBox.confirm(
     `确定将需求「${props.req.title}」的处理进度撤回到「${target}」吗？撤回后相关登记会同步回退，并通知提交人与开发工程师。${planHint}${pcHint}`,
@@ -423,7 +423,7 @@ const syncDefaultDescription = computed(() => {
           :type="rejectMode === 'pass' ? 'info' : 'warning'"
           :closable="false"
           :title="rejectMode === 'pass'
-            ? '通过后需求进入需求池，等待产品经理安排开发排期。备注选填，会记入需求详情的「评审意见」，提交人与开发都能看到。'
+            ? '通过后需求进入需求池，等待产品经理在「排期池」安排上线时间。备注选填，会记入需求详情的「评审意见」，提交人与开发都能看到。'
             : rejectMode === 'pending'
               ? '待定的需求将保留在评审池并标记「待定」，之后仍可评审通过或驳回。'
               : '评审驳回后该需求将直接作废（终态），提交人如仍需要请重新提交新需求。'"

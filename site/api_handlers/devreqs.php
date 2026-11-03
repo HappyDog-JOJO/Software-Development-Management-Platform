@@ -883,7 +883,7 @@ function qly_api_devreqs_priority(): void
     qly_ok(['priority' => $priority], '优先级已调整');
 }
 
-/* ==================== 开发排期 ==================== */
+/* ==================== 排期池（原「开发排期」） ==================== */
 
 /** 能否编排开发排期：产品经理 / 管理员（排期属于计划工作，评审委员只负责评审） */
 function qly_can_schedule_req(array $user): bool
@@ -906,7 +906,7 @@ function qly_api_devreqs_schedule_candidates(): void
 {
     $user = qly_auth_user();
     if (!qly_can_schedule_req($user)) {
-        qly_forbidden('仅产品经理或管理员可编排开发排期');
+        qly_forbidden('仅产品经理或管理员可编排排期');
     }
     [$filterWhere, $filterParams] = qly_devreq_filters();
     [$scopeWhere, $scopeParams] = qly_devreq_scope_where($user, 'i');
@@ -939,7 +939,7 @@ function qly_api_devreqs_schedule(): void
 {
     $user = qly_auth_user();
     if (!qly_can_schedule_req($user)) {
-        qly_forbidden('仅产品经理或管理员可查看开发排期');
+        qly_forbidden('仅产品经理或管理员可查看排期池');
     }
     [$filterWhere, $filterParams] = qly_devreq_filters();
     [$scopeWhere, $scopeParams] = qly_devreq_scope_where($user, 'i');
@@ -988,7 +988,7 @@ function qly_api_devreqs_schedule_set(): void
 {
     $user = qly_auth_user();
     if (!qly_can_schedule_req($user)) {
-        qly_forbidden('仅产品经理或管理员可编排开发排期');
+        qly_forbidden('仅产品经理或管理员可编排排期');
     }
     $date = trim((string) qly_input('planReleaseDate', ''));
     if ($date !== '') {
@@ -1051,7 +1051,7 @@ function qly_api_devreqs_schedule_set(): void
         ]]);
         qly_log(
             $user,
-            '开发排期',
+            '排期池',
             (string) $row['req_no'],
             ($date !== '' ? '设置预计上线时间：' : '取消排期：') . $row['title']
                 . '（' . ($before !== '' ? $before : '未排期') . ' → ' . ($date !== '' ? $date : '未排期') . '）'
@@ -1082,7 +1082,7 @@ function qly_api_devreqs_develop(): void
     // 只有「已加入开发排期」的需求才在任务池里，开发人员从这里领任务；
     // 需求池只负责等排期，不再直接开发（否则排期与实际开工就脱节了）。
     if ((string) ($row['plan_release_date'] ?? '') === '') {
-        qly_fail('该需求还没加入开发排期，请先在「开发排期」设置预计上线时间');
+        qly_fail('该需求还没排期，请先在「排期池」设置预计上线时间');
     }
     $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
     $now = date('Y-m-d H:i:s');
@@ -1266,7 +1266,7 @@ function qly_api_devreqs_withdraw(): void
 
     $logContent = '撤回需求：' . $row['title'] . '（' . $status . ' → ' . $target . '，操作人：' . $name . '）';
     if ($clearedPlanDate !== '') {
-        $logContent .= '；已清空开发排期（原预计上线：' . $clearedPlanDate . '）';
+        $logContent .= '；已清空排期（原预计上线：' . $clearedPlanDate . '）';
     }
     if ($pingcodeDeleted) {
         $logContent .= '；已删除 PingCode 工作项' . ($pcTaskNo !== '' ? '（' . $pcTaskNo . '）' : '');
@@ -1289,7 +1289,7 @@ function qly_api_devreqs_withdraw(): void
     qly_ok(
         ['status' => $target, 'pingcodeDeleted' => $pingcodeDeleted, 'planCleared' => $clearedPlanDate !== ''],
         '已撤回到「' . $target . '」'
-        . ($clearedPlanDate !== '' ? '，并清空了开发排期（原预计上线：' . $clearedPlanDate . '）' : '')
+        . ($clearedPlanDate !== '' ? '，并清空了排期（原预计上线：' . $clearedPlanDate . '）' : '')
         . ($pingcodeDeleted ? '，并删除了 PingCode 工作项' : '')
     );
 }
