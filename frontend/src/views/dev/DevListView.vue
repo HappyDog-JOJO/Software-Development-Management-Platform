@@ -6,6 +6,7 @@
  * - 列宽拖动记忆（colw）+ 列配置（colcfg，显隐与顺序），与问题列表一致
  * - 需求池默认按优先级排序（紧急 > 高 > 中 > 低，同级按提交先后）
  * - 评审池默认「先来先审」：按提交时间正序（先进池子的排最前），需要时可点表头改排序
+ * - 需求池支持导出 Excel：导出列跟随当前展示的列（列配置的显隐与顺序），范围跟随当前筛选
  * - 行内操作按角色与状态动态渲染（文字按钮），操作列固定在最右
  */
 import { computed, onMounted, reactive, ref, watch } from 'vue'
@@ -16,7 +17,7 @@ import { useDictStore } from '@/stores/dict'
 import { useAuthStore } from '@/stores/auth'
 import { battlePublishDevRequest, developDevRequest, fetchDevBranches, fetchDevRequests, fetchPingcodeOptions, setDevRequestBranch, setDevRequestPriority } from '@/api/devreq'
 import type { PingcodeOption } from '@/api/devreq'
-import { exportReleasedLog } from '@/api/log'
+import { exportPoolLog, exportReleasedLog } from '@/api/log'
 import { DEV_PRIORITY_CLASS, DEV_PRIORITY_OPTIONS, DEV_STATUS_CLASS, DEV_STATUS_OPTIONS } from '@/constants/devreq'
 import { canDevReq, canReviewReq, isAdmin, ROLE_PM } from '@/constants/user'
 import DevRequestActions from '@/components/DevRequestActions.vue'
@@ -528,6 +529,89 @@ async function onExport(): Promise<void> {
   }
 }
 
+/**
+ * 导出 Excel 的列取值：与表格渲染保持一致（空值统一为「—」），
+ * 表头文案与顺序直接取当前展示的列（列配置的显隐/顺序会同步生效）。
+ */
+const EXPORT_CELL: Record<string, (r: DevRequest) => string | number> = {
+  reqNo: (r) => (r.reviewPending ? `${r.reqNo}（待定）` : r.reqNo),
+  title: (r) => r.title,
+  moduleName: (r) => r.moduleName || '—',
+  priority: (r) => r.priority,
+  status: (r) => r.status,
+  assigneeName: (r) => r.assigneeName || '—',
+  branch: (r) => r.branch || '—',
+  pingcodeTask: (r) => r.pingcodeTaskNo || (r.pingcodeTaskId ? '已同步' : '未同步'),
+  submitterName: (r) => r.submitterName,
+  submitterDepartmentName: (r) => r.submitterDepartmentName || '未分配部门',
+  createdAt: (r) => fmtDateTime(r.createdAt),
+  releasedAt: (r) => fmtDateTime(r.releasedAt),
+}
+
+/** 导出列宽（按列 key）：编号/标题宽一些，其余按内容常规宽度 */
+const EXPORT_COL_WIDTH: Record<string, number> = {
+  reqNo: 24,
+  title: 40,
+  moduleName: 12,
+  priority: 8,
+  status: 10,
+  assigneeName: 10,
+  branch: 14,
+  pingcodeTask: 14,
+  submitterName: 10,
+  submitterDepartmentName: 16,
+  createdAt: 18,
+  releasedAt: 18,
+}
+
+/**
+ * 导出 Excel（需求池）：按当前筛选导出全部记录（不只当前页），
+ * 导出列＝列表当前展示的列（顺序、显隐跟随列配置），导出动作写操作日志。
+ */
+const poolExporting = ref(false)
+async function onExportPool(): Promise<void> {
+  const cols = devColumns.value
+  if (!cols.length) {
+    ElMessage.warning('当前没有可导出的列，请先在「列配置」里勾选')
+    return
+  }
+  poolExporting.value = true
+  try {
+    // 循环拉取全部页（每页 200，上限保护 50 页 = 1 万条），与列表口径共用 buildQuery
+    const all: DevRequest[] = []
+    for (let p = 1; p <= 50; p += 1) {
+      const res = await fetchDevRequests({ ...buildQuery(), page: p, pageSize: 200 })
+      all.push(...res.items)
+      if (all.length >= res.total || res.items.length === 0) {
+        break
+      }
+    }
+    if (!all.length) {
+      ElMessage.warning('当前筛选没有可导出的数据')
+      return
+    }
+    const rows = all.map((r) => {
+      const row: Record<string, string | number> = {}
+      cols.forEach((c) => {
+        const pick = EXPORT_CELL[c.key]
+        row[c.label] = pick ? pick(r) : ''
+      })
+      return row
+    })
+    const sheet = XLSX.utils.json_to_sheet(rows)
+    sheet['!cols'] = cols.map((c) => ({ wch: EXPORT_COL_WIDTH[c.key] ?? 14 }))
+    const book = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(book, sheet, '需求池')
+    XLSX.writeFile(book, `需求池_${fileStamp()}.xlsx`)
+    await exportPoolLog(all.length)
+    ElMessage.success(`导出完成（共 ${all.length} 条），导出动作已记入操作日志`)
+  } catch {
+    ElMessage.error('导出失败，请重试')
+  } finally {
+    poolExporting.value = false
+  }
+}
+
 function onSearch(): void {
   page.value = 1
   void load()
@@ -808,6 +892,13 @@ watch(
             :loading="batchDevelopBusy"
             @click="onBatchDevelop"
           >批量开发{{ developableSelected.length ? `（${developableSelected.length}）` : '' }}</el-button>
+          <!-- 需求池：导出 Excel（按当前筛选导出全部，列跟随当前展示） -->
+          <el-button
+            v-if="isPoolStage"
+            type="default"
+            :loading="poolExporting"
+            @click="onExportPool"
+          >导出 Excel</el-button>
           <!-- 开发中心：批量同步任务到 PingCode（弹窗填写关键字段） -->
           <el-button
             v-if="isBattleStage"
