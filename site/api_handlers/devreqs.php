@@ -101,6 +101,7 @@ function qly_devreq_row_public(array $r): array
         'pingcodeSyncedAt' => $r['pingcode_synced_at'] ?? null,
         'assigneeId' => $r['assignee_id'] ?? null,
         'assigneeName' => $r['assignee_name'] ?? null,
+        'branch' => ((string) ($r['branch'] ?? '')) !== '' ? (string) $r['branch'] : null,
         'poolAt' => $r['pool_at'],
         'designAt' => $r['design_at'],
         'battleAt' => $r['battle_at'],
@@ -177,6 +178,12 @@ function qly_devreq_filters(): array
     if ($assigneeId !== '') {
         $where .= ' AND i.assignee_id = :asg';
         $params[':asg'] = $assigneeId;
+    }
+    // 开发分支筛选（开发中心 / 发布上线记录页）：精确匹配
+    $branch = trim((string) qly_input('branch', ''));
+    if ($branch !== '') {
+        $where .= ' AND i.branch = :br';
+        $params[':br'] = $branch;
     }
     // 开发中心「我的任务」：按负责人姓名匹配当前登录用户。
     // 负责人落库的是 PingCode 成员姓名（assignee_name），系统用户与该成员表没有绑定字段，
@@ -1114,6 +1121,106 @@ function qly_api_devreqs_pingcode_tags(): void
 }
 
 /**
+ * 开发分支选项（列表筛选下拉）：取库里已有的分支去重，附带需求条数。
+ * 分支不是 PingCode 的字段（Open API 只有 tags / properties，没有分支），
+ * 由平台自己维护在 dev_request.branch 上，所以选项从本库里取。
+ */
+function qly_api_devreqs_branches(): void
+{
+    qly_auth_user();
+    $rows = qly_all(
+        'SELECT i.branch AS branch, COUNT(*) AS cnt FROM `dev_request` i'
+        . " WHERE i.branch IS NOT NULL AND i.branch <> '' GROUP BY i.branch ORDER BY i.branch ASC LIMIT 300"
+    );
+    $out = [];
+    foreach ($rows as $r) {
+        $out[] = ['name' => (string) $r['branch'], 'count' => (int) $r['cnt']];
+    }
+    qly_ok($out);
+}
+
+/**
+ * 设置开发分支（开发中心列表行内编辑；开发工程师 / 管理员）。
+ * PingCode Open API 没有分支字段、也没有 Git/代码端点，分支无法「直接读取」，
+ * 因此由平台维护：写 dev_request.branch，并在已同步时 best-effort 挂同名标签
+ * （沿用历史约定：分支写在 PingCode 工作项的标签上）。
+ */
+function qly_api_devreqs_branch(): void
+{
+    $user = qly_auth_user();
+    if (!qly_can_develop_req($user)) {
+        qly_forbidden('仅开发工程师或管理员可维护开发分支');
+    }
+    $id = qly_input_int('id', 0);
+    $branch = trim((string) qly_input('branch', ''));
+    if (mb_strlen($branch) > 100) {
+        qly_fail('开发分支最多 100 个字');
+    }
+    $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
+    if (!$row) {
+        qly_fail('需求不存在');
+    }
+    $before = trim((string) ($row['branch'] ?? ''));
+    if ($before === $branch) {
+        qly_ok(['branch' => $branch], '开发分支未变化');
+    }
+    $now = date('Y-m-d H:i:s');
+    qly_update('dev_request', $id, [
+        'branch' => $branch !== '' ? $branch : null,
+        'updated_at' => $now,
+    ]);
+    qly_devreq_save_change($user, $id, [[
+        'field' => 'branch',
+        'label' => '开发分支',
+        'before' => $before,
+        'after' => $branch,
+    ]]);
+    qly_log(
+        $user,
+        '需求开发',
+        (string) $row['req_no'],
+        '更新开发分支：' . $row['title'] . '（' . ($before !== '' ? $before : '空') . ' → ' . ($branch !== '' ? $branch : '空') . '）'
+    );
+    // 已同步到 PingCode 的需求：把分支挂成标签，保持两边一致（失败不影响保存）
+    $tagError = '';
+    $taskId = (string) ($row['pingcode_task_id'] ?? '');
+    if ($branch !== '' && $taskId !== '') {
+        require_once __DIR__ . '/../inc/pingcode.php';
+        if (qly_pingcode_configured()) {
+            try {
+                $projectId = qly_pingcode_resolve_project(qly_pingcode_env('PINGCODE_PROJECT_ID'));
+                if ($projectId !== '') {
+                    // 工作项上已有同名标签就不再重复挂（重复挂会报错，也没有意义）
+                    [, $wiJson] = qly_pingcode_http('GET', '/v1/project/work_items/' . $taskId, null, qly_pingcode_token());
+                    $wi = is_array($wiJson) ? ($wiJson['data'] ?? $wiJson) : [];
+                    $hasTag = false;
+                    foreach (($wi['tags'] ?? []) as $t) {
+                        $tagName = is_array($t) ? (string) ($t['name'] ?? '') : (string) $t;
+                        if ($tagName === $branch) {
+                            $hasTag = true;
+                            break;
+                        }
+                    }
+                    if (!$hasTag) {
+                        $tagId = qly_pingcode_ensure_tag($branch, $projectId);
+                        if ($tagId !== '') {
+                            qly_pingcode_attach_tag($taskId, $tagId);
+                        }
+                    }
+                }
+            } catch (Throwable $e) {
+                $tagError = $e->getMessage();
+            }
+        }
+    }
+    $msg = '开发分支已保存';
+    if ($tagError !== '') {
+        $msg .= '（PingCode 标签未同步：' . $tagError . '）';
+    }
+    qly_ok(['branch' => $branch], $msg);
+}
+
+/**
  * 同步任务到 PingCode（开发中心操作；开发工程师/管理员，支持批量）。
  * 在 PingCode「快工单」项目创建「史诗」类型工作项。支持弹窗传入的关键字段：
  * - 单条：fields.title / fields.description（可改），其余同批量
@@ -1161,6 +1268,8 @@ function qly_api_devreqs_sync_task(): void
     }, $fields['tags']), static function ($t) {
         return $t !== '';
     })) : [];
+    // 开发分支（平台自维护字段）：同步时一并落库；填了会作为标签挂到工作项
+    $fBranch = trim((string) ($fields['branch'] ?? ''));
     $startTs = $fStart !== '' ? (int) strtotime($fStart . ' 00:00:00') : 0;
     $dueTs = $fDue !== '' ? (int) strtotime($fDue . ' 23:59:59') : 0;
 
@@ -1240,7 +1349,12 @@ function qly_api_devreqs_sync_task(): void
         try {
             [$taskId, $taskNo, $taskUrl] = qly_pingcode_create_task($title, $desc, $projectId, $typeId, $fPriorityId, $extra);
             // 标签：逐个建/挂（失败不阻塞主体，记入错误提示）
-            foreach ($fTags as $tagName) {
+            // 开发分支按历史约定也写在 PingCode 标签上，去重后一并挂
+            $rowTags = $fTags;
+            if ($fBranch !== '' && !in_array($fBranch, $rowTags, true)) {
+                $rowTags[] = $fBranch;
+            }
+            foreach ($rowTags as $tagName) {
                 try {
                     $tagId = qly_pingcode_ensure_tag($tagName, $projectId);
                     if ($tagId !== '') {
@@ -1255,7 +1369,7 @@ function qly_api_devreqs_sync_task(): void
             $skipCount++;
             continue;
         }
-        qly_update('dev_request', $tid, [
+        $syncUpdate = [
             'pingcode_task_id' => $taskId,
             'pingcode_task_no' => $taskNo !== '' ? $taskNo : null,
             'pingcode_task_url' => $taskUrl !== '' ? $taskUrl : null,
@@ -1263,8 +1377,13 @@ function qly_api_devreqs_sync_task(): void
             'assignee_id' => $fAssigneeId !== '' ? $fAssigneeId : null,
             'assignee_name' => $fAssigneeName !== '' ? $fAssigneeName : null,
             'updated_at' => $now,
-        ]);
-        qly_log($user, '需求开发', (string) $row['req_no'], '同步到 PingCode：' . $title . ($taskNo !== '' ? '（' . $taskNo . '）' : ''));
+        ];
+        // 弹窗填了分支才写入，避免批量同步把各需求已维护的分支覆盖成空
+        if ($fBranch !== '') {
+            $syncUpdate['branch'] = $fBranch;
+        }
+        qly_update('dev_request', $tid, $syncUpdate);
+        qly_log($user, '需求开发', (string) $row['req_no'], '同步到 PingCode：' . $title . ($taskNo !== '' ? '（' . $taskNo . '）' : '') . ($fBranch !== '' ? '，开发分支：' . $fBranch : ''));
         $okCount++;
     }
     if ($okCount === 0) {

@@ -459,6 +459,7 @@ const syncDefaultDescription = computed(() => {
       :default-title="props.req.title"
       :default-description="syncDefaultDescription"
       :default-priority="props.req.priority"
+      :default-branch="props.req.branch ?? ''"
       @done="emit('refresh')"
     />
   </div>

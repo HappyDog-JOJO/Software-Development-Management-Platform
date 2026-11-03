@@ -24,6 +24,8 @@ const props = defineProps<{
   defaultDescription?: string
   /** 需求优先级（紧急/高/中/低）→ 自动映射 PingCode 优先级 */
   defaultPriority?: string
+  /** 开发分支（单条同步时带出当前值；填了会写入需求并挂成 PingCode 标签） */
+  defaultBranch?: string
 }>()
 
 const emit = defineEmits<{
@@ -53,6 +55,8 @@ const form = ref<PingcodeSyncFields>({
   dueAt: '',
   tags: [],
 })
+/** 开发分支（平台自维护字段，PingCode Open API 无分支字段） */
+const branchInput = ref('')
 /** 标签用自由输入（allow-create），这里存字符串数组；选项按关键词远程搜索 */
 const tagList = ref<string[]>([])
 /** 标签远程搜索结果 */
@@ -101,6 +105,7 @@ function resetDefaults(): void {
   }
   tagList.value = []
   tagOptions.value = []
+  branchInput.value = props.defaultBranch ?? ''
   // 默认优先级按需求优先级映射
   const want = props.defaultPriority ? PRIORITY_MAP[props.defaultPriority] ?? '' : ''
   if (want) {
@@ -148,6 +153,7 @@ async function onSubmit(): Promise<void> {
     startAt: form.value.startAt || undefined,
     dueAt: form.value.dueAt || undefined,
     tags: tagList.value.length ? tagList.value : undefined,
+    branch: branchInput.value.trim() || undefined,
   }
   if (props.single) {
     fields.title = (form.value.title ?? '').trim()
@@ -234,6 +240,15 @@ async function onSubmit(): Promise<void> {
           placeholder="结束时间（可留空）"
           style="width: 100%"
         />
+      </el-form-item>
+      <el-form-item label="开发分支">
+        <el-input
+          v-model="branchInput"
+          maxlength="100"
+          show-word-limit
+          placeholder="如 fix108（可留空，之后也能在列表里点着改）"
+        />
+        <div class="pcsd-tag-tip">填了会写入需求「开发分支」，并同步成一个 PingCode 标签。</div>
       </el-form-item>
       <el-form-item label="标签">
         <el-select

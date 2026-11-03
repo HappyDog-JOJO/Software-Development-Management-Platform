@@ -128,6 +128,8 @@ export interface PingcodeSyncFields {
   startAt?: string
   dueAt?: string
   tags?: string[]
+  /** 开发分支：写入需求 dev_request.branch，并作为标签挂到 PingCode 工作项 */
+  branch?: string
   /** 问题同步专用：auto=按 BUG 排班顺位（默认），manual=手动指定负责人（不推进顺位） */
   rosterMode?: 'auto' | 'manual'
 }
@@ -167,6 +169,16 @@ export function clearPingcodeOptionsCache(): void {
 /** 搜索 PingCode 标签库（远程搜索，带 id 采用现有标签；查不到由后端按名建标签） */
 export function searchPingcodeTags(keyword: string): Promise<PingcodeOption[]> {
   return http.get<PingcodeOption[]>('/api.php?r=devreqs/pingcode-tags', { keyword }, true)
+}
+
+/** 开发分支选项（列表筛选下拉：库里已有分支去重 + 各自需求条数） */
+export function fetchDevBranches(): Promise<Array<{ name: string; count: number }>> {
+  return http.get<Array<{ name: string; count: number }>>('/api.php?r=devreqs/branches', {}, true)
+}
+
+/** 设置开发分支（开发工程师/管理员；传空字符串=清除；已同步时同挂 PingCode 标签） */
+export function setDevRequestBranch(id: number, branch: string): Promise<{ branch: string }> {
+  return http.post<{ branch: string }>('/api.php?r=devreqs/branch', { id, branch })
 }
 
 /** 同步任务到 PingCode（开发工程师/管理员，支持批量；已同步的自动跳过）；可带弹窗字段 */

@@ -14,7 +14,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import * as XLSX from 'xlsx'
 import { useDictStore } from '@/stores/dict'
 import { useAuthStore } from '@/stores/auth'
-import { battlePublishDevRequest, developDevRequest, fetchDevRequests, fetchPingcodeOptions, setDevRequestPriority } from '@/api/devreq'
+import { battlePublishDevRequest, developDevRequest, fetchDevBranches, fetchDevRequests, fetchPingcodeOptions, setDevRequestBranch, setDevRequestPriority } from '@/api/devreq'
 import type { PingcodeOption } from '@/api/devreq'
 import { exportReleasedLog } from '@/api/log'
 import { DEV_PRIORITY_CLASS, DEV_PRIORITY_OPTIONS, DEV_STATUS_CLASS, DEV_STATUS_OPTIONS } from '@/constants/devreq'
@@ -98,6 +98,7 @@ const DEV_COL_DEFS: Record<string, DevColDef> = {
   title: { label: '需求标题', minWidth: 180 },
   pingcodeTask: { label: 'PingCode', width: 110 },
   assigneeName: { label: '负责人', width: 100 },
+  branch: { label: '开发分支', width: 130 },
   moduleName: { label: '模块', width: 80 },
   priority: { label: '优先级', width: 78, align: 'center', sortable: true },
   status: { label: '状态', width: 100, align: 'center' },
@@ -153,6 +154,10 @@ const devColumns = computed(() =>
       if (c.key === 'assigneeName' && !isBattleStage.value && !isReleasedStage.value) {
         return false
       }
+      // 开发分支列：开发中心 + 发布上线记录页展示
+      if (c.key === 'branch' && !isBattleStage.value && !isReleasedStage.value) {
+        return false
+      }
       if (c.key === 'releasedAt' && !isReleasedStage.value) {
         return false
       }
@@ -194,6 +199,8 @@ const filters = reactive({
   moduleId: undefined as number | undefined,
   /** 负责人筛选（PingCode 成员 id） */
   assigneeId: '' as string,
+  /** 开发分支筛选（开发中心/发布上线记录页） */
+  branch: '',
   /** 上线时间范围（发布上线记录页） */
   releasedStart: '',
   releasedEnd: '',
@@ -212,6 +219,55 @@ async function loadAssigneeOptions(): Promise<void> {
     assigneeOptions.value = []
   }
 }
+
+/** 当前页是否展示「开发分支」筛选与列：开发中心 + 发布上线记录页 */
+const showBranch = computed(() => isBattleStage.value || isReleasedStage.value)
+/** 可维护开发分支的角色：开发工程师 / 管理员（与后端 qly_can_develop_req 一致） */
+const canEditBranch = computed(() => canDevReq(auth.roles))
+/** 开发分支选项（筛选下拉：库里已有分支去重） */
+const branchOptions = ref<Array<{ name: string; count: number }>>([])
+let branchOptionsLoaded = false
+async function loadBranchOptions(): Promise<void> {
+  if (branchOptionsLoaded) return
+  try {
+    branchOptions.value = await fetchDevBranches()
+    branchOptionsLoaded = true
+  } catch {
+    branchOptions.value = []
+  }
+}
+
+/**
+ * 行内维护开发分支（开发工程师 / 管理员）。
+ * PingCode Open API 没有分支字段，分支由平台维护在需求上，同步时同挂为 PingCode 标签。
+ */
+async function onEditBranch(row: DevRequest): Promise<void> {
+  const current = (row.branch ?? '').trim()
+  let value = ''
+  try {
+    const res = await ElMessageBox.prompt('', current ? '修改开发分支' : '设置开发分支', {
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+      inputValue: current,
+      inputPlaceholder: '如 fix108、release_20261103（留空=清除）',
+      inputValidator: (v: string) => (v ?? '').trim().length <= 100 || '最多 100 个字',
+    })
+    value = (res.value ?? '').trim()
+  } catch {
+    return
+  }
+  if (value === current) return
+  try {
+    await setDevRequestBranch(row.id, value)
+  } catch {
+    return
+  }
+  ElMessage.success(value ? '开发分支已保存' : '开发分支已清除')
+  branchOptionsLoaded = false
+  void loadBranchOptions()
+  await load()
+}
+
 
 /** 需求池可批量「开发」的勾选行 */
 const developableSelected = computed(() => selectedRows.value.filter((r) => r.status === '需求池'))
@@ -390,6 +446,7 @@ function buildQuery(): DevQuery {
     priority: filters.priority || undefined,
     moduleId: filters.moduleId,
     assigneeId: showAssignee.value ? filters.assigneeId || undefined : undefined,
+    branch: showBranch.value ? filters.branch || undefined : undefined,
     assigneeSelf: showBattleScope.value && battleScope.value === 'mine' ? '1' : undefined,
     releasedStart: isReleasedStage.value ? filters.releasedStart || undefined : undefined,
     releasedEnd: isReleasedStage.value ? filters.releasedEnd || undefined : undefined,
@@ -566,6 +623,7 @@ function registerColumns(): void {
     { key: 'title', label: '需求标题' },
     { key: 'pingcodeTask', label: 'PingCode' },
     { key: 'assigneeName', label: '负责人' },
+    { key: 'branch', label: '开发分支' },
     { key: 'moduleName', label: '模块' },
     { key: 'priority', label: '优先级' },
     { key: 'status', label: '状态' },
@@ -641,6 +699,26 @@ watch(
             @visible-change="(v: boolean) => v && loadAssigneeOptions()"
           >
             <el-option v-for="m in assigneeOptions" :key="m.id" :label="m.name" :value="m.id" />
+          </el-select>
+        </div>
+        <!-- 开发中心 / 发布上线：按开发分支筛选（分支由平台维护，选项取自库里已有值） -->
+        <div v-if="showBranch" class="filter-inline__item">
+          <span class="filter-inline__label">开发分支</span>
+          <el-select
+            v-model="filters.branch"
+            placeholder="全部分支"
+            clearable
+            filterable
+            style="width: 150px"
+            @change="load"
+            @visible-change="(v: boolean) => v && loadBranchOptions()"
+          >
+            <el-option v-for="b in branchOptions" :key="b.name" :label="b.name" :value="b.name">
+              <span class="branch-opt">
+                <span class="cell-nowrap">{{ b.name }}</span>
+                <span class="branch-opt__count">{{ b.count }}</span>
+              </span>
+            </el-option>
           </el-select>
         </div>
         <!-- 开发中心 / 需求池等：按状态筛选 -->
@@ -825,6 +903,24 @@ watch(
                 <span v-else class="text-placeholder">—</span>
               </template>
 
+              <!-- 开发分支（开发中心/发布上线）：开发工程师或管理员可点击维护 -->
+              <template v-else-if="c.key === 'branch'">
+                <el-tooltip
+                  v-if="row.branch"
+                  :content="canEditBranch ? `点击修改（当前：${row.branch}）` : row.branch"
+                  placement="top"
+                  effect="light"
+                  :show-after="200"
+                >
+                  <a
+                    class="cell-code cell-code--link cell-nowrap"
+                    @click="canEditBranch && onEditBranch(row)"
+                  >{{ row.branch }}</a>
+                </el-tooltip>
+                <a v-else-if="canEditBranch" class="branch-empty" @click="onEditBranch(row)">设置分支</a>
+                <span v-else class="text-placeholder">—</span>
+              </template>
+
               <!-- PingCode 同步状态（开发中心/发布上线展示：已同步显示工作项编号链接，未同步显示「未同步」） -->
               <template v-else-if="c.key === 'pingcodeTask'">
                 <el-tooltip
@@ -947,6 +1043,30 @@ watch(
 </template>
 
 <style scoped>
+/* 开发分支：空值时的「设置分支」入口 + 筛选下拉的条数 */
+.branch-empty {
+  font-size: 12px;
+  color: var(--color-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.branch-empty:hover {
+  text-decoration: underline;
+}
+
+.branch-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.branch-opt__count {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
 /* 筛选面板：头部（标题 + 折叠开关）+ 内联字段行（与问题列表一致） */
 .filter-panel {
   display: flex;
