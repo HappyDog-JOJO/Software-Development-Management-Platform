@@ -989,9 +989,9 @@ function qly_api_devreqs_schedule(): void
     );
     $sum = qly_one(
         'SELECT COUNT(*) AS total,'
-        // 逾期 / 本周都按「实际到期日」判断：月排期到月末才算逾期，整月都还在本周窗口内就计数
+        // 逾期 / 本周都按「实际到期日」判断：月排期到月末才算到期，11 月的排期不会整月都算「本周」
         . ' SUM(CASE WHEN ' . qly_devreq_plan_effective('i') . ' < CURDATE() THEN 1 ELSE 0 END) AS overdue,'
-        . ' SUM(CASE WHEN ' . qly_devreq_plan_effective('i') . ' >= CURDATE() AND i.plan_release_date <= DATE_ADD(CURDATE(), INTERVAL 6 DAY) THEN 1 ELSE 0 END) AS thisWeek'
+        . ' SUM(CASE WHEN ' . qly_devreq_plan_effective('i') . ' >= CURDATE() AND ' . qly_devreq_plan_effective('i') . ' <= DATE_ADD(CURDATE(), INTERVAL 6 DAY) THEN 1 ELSE 0 END) AS thisWeek'
         . $base . $scopeWhere,
         $params
     );

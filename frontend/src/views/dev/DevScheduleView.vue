@@ -156,10 +156,10 @@ function isOverdue(row: DevRequest): boolean {
 }
 
 function isThisWeek(row: DevRequest): boolean {
-  const d = row.planReleaseDate ?? ''
-  if (!d) return false
-  // 月排期只要和「今天起 7 天」有交集就算本周：结束日 >= 今天 且 起始日 <= 周末
-  return planDueDate(row) >= today && d <= weekEnd
+  if (!row.planReleaseDate) return false
+  // 按「实际到期日」判断：月排期在月末，11 月的排期不会整月都挂着「本周」标签
+  const due = planDueDate(row)
+  return due >= today && due <= weekEnd
 }
 
 function rowClass({ row }: { row: DevRequest }): string {
