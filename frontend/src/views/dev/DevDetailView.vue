@@ -16,7 +16,7 @@ import { logTypeClass } from '@/constants/issue'
 import DevRequestActions from '@/components/DevRequestActions.vue'
 import RoleTag from '@/components/RoleTag.vue'
 import MoonLoader from '@/components/illustrations/MoonLoader.vue'
-import { fmtDateTime, fmtSize, isImage } from '@/utils/format'
+import { fmtDate, fmtDateTime, fmtSize, isImage } from '@/utils/format'
 import { openAttachment } from '@/utils/attachment'
 import type { DevAttachment, DevRequestDetail } from '@/types'
 
@@ -334,6 +334,11 @@ watch(reqId, load)
               <div v-if="detail.reviewComment" class="meta-row">
                 <span class="meta-row__label">评审意见</span>
                 <span class="meta-row__value">{{ detail.reviewComment }}</span>
+              </div>
+              <!-- 预计上线时间：加入开发排期后才有值；撤回时会一并清空 -->
+              <div v-if="detail.planReleaseDate" class="meta-row">
+                <span class="meta-row__label">预计上线</span>
+                <span class="meta-row__value">{{ fmtDate(detail.planReleaseDate) }}<span v-if="detail.planReleaseBy" class="meta-row__sub">排期人：{{ detail.planReleaseBy }}</span></span>
               </div>
               <div class="meta-row">
                 <span class="meta-row__label">上线时间</span>

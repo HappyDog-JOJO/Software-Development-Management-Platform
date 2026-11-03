@@ -39,7 +39,7 @@ export function exportReleasedLog(count: number): Promise<null> {
   return http.post<null>('/api.php?r=export/log', { kind: 'released', count }, true)
 }
 
-/** 需求池导出（写操作日志） */
-export function exportPoolLog(count: number): Promise<null> {
-  return http.post<null>('/api.php?r=export/log', { kind: 'pool', count }, true)
+/** 需求池 / 任务池导出（写操作日志） */
+export function exportPoolLog(count: number, kind: 'pool' | 'task' = 'pool'): Promise<null> {
+  return http.post<null>('/api.php?r=export/log', { kind, count }, true)
 }

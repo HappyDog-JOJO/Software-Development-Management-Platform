@@ -88,7 +88,7 @@ export function canManageDuty(roles: Role[] | undefined): boolean {
 /** 可评审需求（评审委员 / 管理员；发布上线同权限） */
 export const REVIEW_REQ_ROLES: Role[] = [ROLE_COMMITTEE, ROLE_ADMIN]
 
-/** 开发需求（需求池点「开发」进入开发中心；开发工程师 / 管理员） */
+/** 开发需求（任务池点「开发」进入开发中心；开发工程师 / 管理员） */
 export const DEV_REQ_ROLES: Role[] = [ROLE_DEV, ROLE_ADMIN]
 
 /** 可评审需求 */

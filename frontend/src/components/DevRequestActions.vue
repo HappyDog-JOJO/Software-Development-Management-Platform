@@ -3,7 +3,7 @@
  * 需求操作组件：按「角色 + 需求状态」动态渲染操作按钮与弹窗。
  * 列表页与详情页共用；操作成功后 emit('refresh') 让父级重新拉数据。
  * 覆盖动作：评审通过（备注选填，可写验收标准/范围说明）/ 待定（备注必填，暂留评审池）/ 驳回（备注必填，作废终态）、
- *           开发（需求池 → 开发中心）、发布上线（开发中心，开发工程师/管理员）、
+ *           开发（任务池 → 开发中心）、发布上线（开发中心，开发工程师/管理员）、
  *           修改/删除（提交人本人或管理员，仅评审池）。
  * link：列表内传 true → 文字按钮（与各列表页操作列一致）；详情页不传 → 实心按钮。
  * 说明：原「设计中心」环节已移除——需求池不再经产品经理「认领设计」，改由开发工程师/管理员
@@ -58,9 +58,16 @@ const btnDanger = computed(() =>
 const showReview = computed(
   () => props.req.status === '评审池' && canReviewReq(auth.user?.roles),
 )
-/** 开发（认领开发）：需求池，开发工程师 / 管理员 —— 点击直接进入开发中心 */
+/**
+ * 开发（认领开发）：开发工程师 / 管理员 —— 点击直接进入开发中心。
+ * 只有「已加入开发排期」的需求才在任务池里可领；需求池（未排期）不再出现「开发」按钮，
+ * 与后端 devreqs/develop 的校验保持一致。
+ */
 const showDevelop = computed(
-  () => props.req.status === '需求池' && canDevReq(auth.user?.roles),
+  () =>
+    props.req.status === '需求池' &&
+    !!props.req.planReleaseDate &&
+    canDevReq(auth.user?.roles),
 )
 /** 开发中心发布上线：开发工程师 或 管理员 */
 const showBattlePublish = computed(
@@ -284,8 +291,13 @@ async function onWithdraw(): Promise<void> {
   const pcHint = props.req.pingcodeTaskId
     ? `该需求已同步到 PingCode（${props.req.pingcodeTaskNo || '工作项'}），撤回会一并删除该 PingCode 工作项（不可恢复）。`
     : ''
+  // 撤回后不再是「评审通过」：已排期的需求会一并清空开发排期（后端同步处理）
+  const planHint =
+    props.req.planReleaseDate && (target === '需求池' || target === '评审池')
+      ? `该需求已排期（预计上线 ${props.req.planReleaseDate}），撤回会一并清空开发排期。`
+      : ''
   await ElMessageBox.confirm(
-    `确定将需求「${props.req.title}」的处理进度撤回到「${target}」吗？撤回后相关登记会同步回退，并通知提交人与开发工程师。${pcHint}`,
+    `确定将需求「${props.req.title}」的处理进度撤回到「${target}」吗？撤回后相关登记会同步回退，并通知提交人与开发工程师。${planHint}${pcHint}`,
     '撤回需求',
     { confirmButtonText: '确定撤回', cancelButtonText: '取消', type: 'warning' },
   )
@@ -346,7 +358,7 @@ const syncDefaultDescription = computed(() => {
       <el-button v-bind="btnDanger" @click="openReview('reject')">驳回</el-button>
     </template>
 
-    <!-- 需求池：开发（开发工程师/管理员；点击直接进入开发中心） -->
+    <!-- 任务池（已排期需求）：开发（开发工程师/管理员；点击直接进入开发中心） -->
     <el-button v-if="showDevelop" v-bind="btnPrimary" :loading="busy" @click="onDevelop">开发</el-button>
 
     <!-- 开发中心：发布上线（立即上线，记录上线时间） -->
@@ -411,7 +423,7 @@ const syncDefaultDescription = computed(() => {
           :type="rejectMode === 'pass' ? 'info' : 'warning'"
           :closable="false"
           :title="rejectMode === 'pass'
-            ? '通过后需求进入需求池，等待开发工程师认领开发。备注选填，会记入需求详情的「评审意见」，提交人与开发都能看到。'
+            ? '通过后需求进入需求池，等待产品经理安排开发排期。备注选填，会记入需求详情的「评审意见」，提交人与开发都能看到。'
             : rejectMode === 'pending'
               ? '待定的需求将保留在评审池并标记「待定」，之后仍可评审通过或驳回。'
               : '评审驳回后该需求将直接作废（终态），提交人如仍需要请重新提交新需求。'"

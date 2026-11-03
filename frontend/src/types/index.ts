@@ -583,9 +583,11 @@ export interface DevQuery {
   assigneeSelf?: '1'
   /** 开发分支筛选（精确匹配；开发中心 / 发布上线记录页） */
   branch?: string
+  /** 排期状态：scheduled=已加入开发排期（任务池），unscheduled=还没排期（需求池） */
+  planState?: 'scheduled' | 'unscheduled'
   page?: number
   pageSize?: number
-  sortField?: 'createdAt' | 'priority' | 'releasedAt'
+  sortField?: 'createdAt' | 'priority' | 'releasedAt' | 'planReleaseDate'
   sortOrder?: 'ASC' | 'DESC'
 }
 

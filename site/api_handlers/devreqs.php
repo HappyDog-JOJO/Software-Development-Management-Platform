@@ -140,8 +140,13 @@ function qly_devreq_filters(): array
         $where .= ' AND i.status = :st';
         $params[':st'] = $status;
     }
-    // 需求池：已加入「开发排期」的需求不再在此列出（避免同一批需求两处重复，排期页统一管理）
-    if ($status === '需求池') {
+    // 排期状态筛选：
+    //   scheduled   = 已加入开发排期（任务池：开发人员从这里领任务）
+    //   unscheduled = 还没排期（需求池：只等排期，不再直接开发）
+    $planState = (string) qly_input('planState', '');
+    if ($planState === 'scheduled') {
+        $where .= ' AND i.plan_release_date IS NOT NULL';
+    } elseif ($planState === 'unscheduled') {
         $where .= ' AND i.plan_release_date IS NULL';
     }
     $priority = (string) qly_input('priority', '');
@@ -234,6 +239,10 @@ function qly_api_devreqs_list(): void
         // 发布上线记录页：按上线时间倒序（最近上线在前）
         $order = 'i.released_at';
         $dir = strtoupper((string) qly_input('sortOrder', 'DESC')) === 'ASC' ? 'ASC' : 'DESC';
+    } elseif ($sortField === 'planReleaseDate') {
+        // 任务池：按预计上线时间排序（默认先到期先做）
+        $order = 'i.plan_release_date';
+        $dir = strtoupper((string) qly_input('sortOrder', 'ASC')) === 'DESC' ? 'DESC' : 'ASC';
     } else {
         $order = 'i.created_at';
         // 排序方向：显式传 sortOrder 就听调用方的；
@@ -306,6 +315,9 @@ function qly_api_devreqs_neighbors(): void
     } elseif ($sortField === 'releasedAt') {
         $dir = strtoupper((string) qly_input('sortOrder', 'DESC')) === 'ASC' ? 'ASC' : 'DESC';
         $orderBy = 'i.released_at ' . $dir . ', i.id ' . $dir;
+    } elseif ($sortField === 'planReleaseDate') {
+        $dir = strtoupper((string) qly_input('sortOrder', 'ASC')) === 'DESC' ? 'DESC' : 'ASC';
+        $orderBy = 'i.plan_release_date ' . $dir . ', i.id ' . $dir;
     } else {
         $explicit = strtoupper((string) qly_input('sortOrder', ''));
         if ($explicit === 'ASC' || $explicit === 'DESC') {
@@ -1058,7 +1070,12 @@ function qly_api_devreqs_develop(): void
         qly_fail('需求不存在');
     }
     if ((string) $row['status'] !== '需求池') {
-        qly_fail('该需求不在需求池');
+        qly_fail('该需求不在任务池');
+    }
+    // 只有「已加入开发排期」的需求才在任务池里，开发人员从这里领任务；
+    // 需求池只负责等排期，不再直接开发（否则排期与实际开工就脱节了）。
+    if ((string) ($row['plan_release_date'] ?? '') === '') {
+        qly_fail('该需求还没加入开发排期，请先在「开发排期」设置预计上线时间');
     }
     $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
     $now = date('Y-m-d H:i:s');
@@ -1205,6 +1222,18 @@ function qly_api_devreqs_withdraw(): void
             'released_by' => null,
         ];
     }
+    // 撤回后若已不再是「评审通过」状态（退回评审池 / 退回需求池），开发排期一并清空：
+    // 从开发中心撤回＝这批活不做了，留着旧日期会让需求带着旧排期直接落进「任务池」，等于没撤回。
+    $planDateBefore = (string) ($row['plan_release_date'] ?? '');
+    $clearedPlanDate = '';
+    if ($planDateBefore !== '' && ($target === '评审池' || $target === '需求池')) {
+        $update += [
+            'plan_release_date' => null,
+            'plan_release_by' => null,
+            'plan_release_at' => null,
+        ];
+        $clearedPlanDate = $planDateBefore;
+    }
     // 已删除 PingCode 工作项时，一并清除同步记录与负责人（与「未同步」状态一致）
     if ($pingcodeDeleted) {
         $update += [
@@ -1218,7 +1247,20 @@ function qly_api_devreqs_withdraw(): void
     }
     qly_update('dev_request', $id, $update);
 
+    // 撤回时清空了排期 → 记一条字段级变更，时间线上能看到「预计上线时间 2026-11-17 → 空」
+    if ($clearedPlanDate !== '') {
+        qly_devreq_save_change($user, $id, [[
+            'field' => 'plan_release_date',
+            'label' => '预计上线时间',
+            'before' => $clearedPlanDate,
+            'after' => '',
+        ]]);
+    }
+
     $logContent = '撤回需求：' . $row['title'] . '（' . $status . ' → ' . $target . '，操作人：' . $name . '）';
+    if ($clearedPlanDate !== '') {
+        $logContent .= '；已清空开发排期（原预计上线：' . $clearedPlanDate . '）';
+    }
     if ($pingcodeDeleted) {
         $logContent .= '；已删除 PingCode 工作项' . ($pcTaskNo !== '' ? '（' . $pcTaskNo . '）' : '');
     } elseif ($pcTaskId !== '') {
@@ -1238,8 +1280,10 @@ function qly_api_devreqs_withdraw(): void
         (int) $user['id']
     );
     qly_ok(
-        ['status' => $target, 'pingcodeDeleted' => $pingcodeDeleted],
-        '已撤回到「' . $target . '」' . ($pingcodeDeleted ? '，并删除了 PingCode 工作项' : '')
+        ['status' => $target, 'pingcodeDeleted' => $pingcodeDeleted, 'planCleared' => $clearedPlanDate !== ''],
+        '已撤回到「' . $target . '」'
+        . ($clearedPlanDate !== '' ? '，并清空了开发排期（原预计上线：' . $clearedPlanDate . '）' : '')
+        . ($pingcodeDeleted ? '，并删除了 PingCode 工作项' : '')
     );
 }
 

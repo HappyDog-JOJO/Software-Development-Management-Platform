@@ -231,6 +231,7 @@ const menuIconMap: Record<string, string> = {
   release: 'M2 21 23 12 2 3v7l15 2-15 2v7Z',
   // 开发排期：表盘 + 指针
   schedule: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 5h-2v6l5 3 1-1.7-4-2.3V7Z',
+  task: 'M4 4h4v4H4V4Zm0 6h4v4H4v-4Zm0 6h4v4H4v-4Zm7-12h9v2h-9V4Zm0 6h9v2h-9v-2Zm0 6h9v2h-9v-2Z',
   headset: 'M12 3a8 8 0 0 0-8 8v5a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H6v-1a6 6 0 0 1 12 0v1h-2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1a3 3 0 0 0 3-3v-5a8 8 0 0 0-8-8Z',
   kanban: 'M3 4h5v16H3V4Zm6.5 0h5v10h-5V4ZM16 4h5v13h-5V4Z',
   // 销售分析：柱状图 + 趋势线，与「报表统计」的 chart 图标区分

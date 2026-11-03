@@ -64,7 +64,7 @@ export function reviewDevRequest(
   return http.post<null>('/api.php?r=devreqs/review', { id, action, ...payload })
 }
 
-/** 开发（认领开发）：需求池 → 开发中心（开发工程师 / 管理员点「开发」直接进入开发中心） */
+/** 开发（认领开发）：任务池（已排期需求）→ 开发中心（开发工程师 / 管理员点「开发」直接进入开发中心） */
 export function developDevRequest(id: number): Promise<null> {
   return http.post<null>('/api.php?r=devreqs/develop', { id })
 }

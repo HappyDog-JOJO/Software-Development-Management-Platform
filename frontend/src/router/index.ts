@@ -112,6 +112,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '开发排期', roles: [ROLE_PM, ROLE_ADMIN], icon: 'schedule', group: '开发管理' },
       },
       {
+        path: 'dev/task',
+        name: 'DevTaskPool',
+        component: () => import('@/views/dev/DevListView.vue'),
+        props: { stage: '需求池' as DevStatus, scheduled: true },
+        meta: {
+          title: '任务池',
+          roles: [ROLE_DEV, ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN],
+          icon: 'task',
+          group: '开发管理',
+        },
+      },
+      {
         path: 'dev/battle',
         name: 'DevBattle',
         component: () => import('@/views/dev/DevListView.vue'),
@@ -242,6 +254,7 @@ export const MENU: MenuNode[] = [
   { path: '/dev/review', title: '评审池', icon: 'review', group: '开发管理', roles: [ROLE_COMMITTEE, ROLE_ADMIN] },
   { path: '/dev/pool', title: '需求池', icon: 'pool', group: '开发管理', roles: [ROLE_PM, ROLE_COMMITTEE, ROLE_DEV, ROLE_ADMIN] },
   { path: '/dev/schedule', title: '开发排期', icon: 'schedule', group: '开发管理', roles: [ROLE_PM, ROLE_ADMIN] },
+  { path: '/dev/task', title: '任务池', icon: 'task', group: '开发管理', roles: [ROLE_DEV, ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN] },
   { path: '/dev/battle', title: '开发中心', icon: 'battle', group: '开发管理', roles: [ROLE_DEV, ROLE_PM, ROLE_COMMITTEE, ROLE_ADMIN] },
   { path: '/dev/release', title: '发布上线', icon: 'release', group: '开发管理', roles: [ROLE_COMMITTEE, ROLE_ADMIN] },
   // 销售分析（放在开发管理之后、系统管理之前）

@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/** 导出动作日志：导出问题列表 / 报表 / 发布上线记录 / 需求池时写操作日志 */
+/** 导出动作日志：导出问题列表 / 报表 / 发布上线记录 / 需求池 / 任务池时写操作日志 */
 
 function qly_api_export_log(): void
 {
@@ -13,6 +13,7 @@ function qly_api_export_log(): void
         'report' => '报表统计',
         'released' => '发布上线记录',
         'pool' => '需求池',
+        'task' => '任务池',
     ];
     $label = $labels[$kind] ?? '问题列表';
     qly_log($user, '导出', $label, '导出' . $label . ' Excel，共 ' . $count . ' 条记录');

@@ -5,6 +5,7 @@
  * - 顶部筛选：可折叠筛选面板（优先级 / 模块 / 状态 / 关键字）
  * - 列宽拖动记忆（colw）+ 列配置（colcfg，显隐与顺序），与问题列表一致
  * - 需求池默认按优先级排序（紧急 > 高 > 中 > 低，同级按提交先后）
+ * - 任务池（需求池里已加入开发排期的那部分）默认按预计上线时间正序（先到期先做）
  * - 评审池默认「先来先审」：按提交时间正序（先进池子的排最前），需要时可点表头改排序
  * - 需求池支持导出 Excel：导出列跟随当前展示的列（列配置的显隐与顺序），范围跟随当前筛选
  * - 行内操作按角色与状态动态渲染（文字按钮），操作列固定在最右
@@ -29,7 +30,18 @@ import { useColumnWidths } from '@/composables/useColumnWidths'
 import { useColumnConfig } from '@/composables/useColumnConfig'
 import type { DevPriority, DevQuery, DevRequest, DevStatus } from '@/types'
 
-const props = defineProps<{ stage?: DevStatus; mine?: boolean; released?: boolean }>()
+/**
+ * stage   —— 环节（评审池/需求池/开发中心）
+ * mine    —— 我的需求
+ * released—— 发布上线记录
+ * scheduled —— 任务池：需求池里「已加入开发排期」的那部分（开发人员在此领任务）
+ */
+const props = defineProps<{
+  stage?: DevStatus
+  mine?: boolean
+  released?: boolean
+  scheduled?: boolean
+}>()
 
 const auth = useAuthStore()
 
@@ -56,13 +68,15 @@ function onAdminViewChange(): void {
 
 /**
  * 本列表页的存储标识（列宽记忆 / 列配置共用）。
- * 本组件被 4 个环节页复用（我的需求/评审池/需求池/开发中心）：
+ * 本组件被 5 个环节页复用（我的需求/评审池/需求池/任务池/开发中心）：
  * 路由侧已给各页独立的组件实例（router-view 按 route.name 加 key），
  * 这里只需在实例创建时按当前页取一个固定标识，页与页之间互不影响。
  */
 const tableId = (() => {
   if (props.released) return 'dev-released'
   if (props.mine) return 'dev-mine'
+  // 任务池与需求池共用 stage='需求池'，但列宽/列配置要各自独立记忆
+  if (props.scheduled) return 'dev-task'
   switch (props.stage) {
     case '评审池':
       return 'dev-review'
@@ -105,7 +119,8 @@ const DEV_COL_DEFS: Record<string, DevColDef> = {
   status: { label: '状态', width: 100, align: 'center' },
   submitterName: { label: '提交人', width: 96 },
   submitterDepartmentName: { label: '提交部门', width: 116 },
-  createdAt: { label: '提交时间', width: 150, sortable: true, align: 'center' },
+  createdAt: { label: '提交时间', width: 168, sortable: true, align: 'center' },
+  planReleaseDate: { label: '预计上线时间', width: 130, sortable: true, align: 'center' },
   releasedAt: { label: '上线时间', width: 150, sortable: true, align: 'center' },
 }
 
@@ -121,13 +136,15 @@ const pageSize = ref(10)
 const showStatusColumn = computed(() => !props.stage)
 /** 开发中心页：展示 PingCode 列与批量发布（其余页面不展示） */
 const isBattleStage = computed(() => props.stage === '开发中心')
-/** 需求池页：展示批量「开发」操作（开发工程师/管理员） */
-const isPoolStage = computed(() => props.stage === '需求池')
-/** 批量勾选适用于需求池/开发中心，且需具备开发权限（开发工程师/管理员） */
+/** 需求池页：只等排期的需求（不再提供「开发」） */
+const isPoolStage = computed(() => props.stage === '需求池' && props.scheduled !== true)
+/** 任务池页：已加入开发排期的需求，开发工程师在这里领任务 */
+const isTaskPool = computed(() => props.scheduled === true)
+/** 批量勾选适用于任务池/开发中心，且需具备开发权限（开发工程师/管理员） */
 const canBatchDevelop = computed(() => canDevReq(auth.roles))
-/** 选择列可选状态：需求池页=需求池，开发中心页=开发中心 */
+/** 选择列可选状态：任务池页=需求池状态（已排期），开发中心页=开发中心 */
 function isSelectable(r: DevRequest): boolean {
-  return isPoolStage.value ? r.status === '需求池' : r.status === '开发中心'
+  return isTaskPool.value ? r.status === '需求池' : r.status === '开发中心'
 }
 /** 发布上线记录页：展示上线时间列 + 时间筛选，不展示操作列 */
 const isReleasedStage = computed(() => props.released === true)
@@ -162,6 +179,14 @@ const devColumns = computed(() =>
       if (c.key === 'releasedAt' && !isReleasedStage.value) {
         return false
       }
+      // 预计上线时间列：任务池（领任务时按到期先后挑）
+      if (c.key === 'planReleaseDate' && !isTaskPool.value) {
+        return false
+      }
+      // 任务池：提交人与提交部门信息重复，且列多会横向溢出把「预计上线时间」挤到操作列下面
+      if (c.key === 'submitterDepartmentName' && isTaskPool.value) {
+        return false
+      }
       return true
     })
     .map((c) => ({ key: c.key, ...DEV_COL_DEFS[c.key] })),
@@ -171,17 +196,24 @@ const stageLabel = computed(() => {
   if (showScopeSwitch.value && adminView.value === 'all') {
     return '全部需求'
   }
+  if (isTaskPool.value) {
+    return '任务池'
+  }
   return props.mine ? '我的需求' : (props.stage ?? '全部需求')
 })
 const stageDesc = computed(() => {
   if (showScopeSwitch.value && adminView.value === 'all') {
     return '管理员视角：全公司所有人的需求与最新进度（可切换为「只看我的」）。'
   }
+  // 任务池与需求池共用 stage='需求池'，说明文案不同，故先于 switch 判断
+  if (isTaskPool.value) {
+    return '已加入开发排期的需求（按预计上线时间先后排序），开发工程师挑选后点「开发」进入开发中心；未排期的需求请先在「开发排期」设置上线时间。'
+  }
   switch (props.stage) {
     case '评审池':
       return '所有新需求在此排队等待评审：按提交先后排列（先来先审），通过即进入需求池，待定暂留本池（可再改判），驳回则需求作废。'
     case '需求池':
-      return '评审通过的需求在此集结（按优先级排序），开发工程师从中挑选任务点「开发」进入开发中心；已加入「开发排期」的需求不再在此显示，请到开发排期页查看与调整。'
+      return '评审通过的需求在此集结（按优先级排序），等待产品经理安排开发排期；已加入「开发排期」的需求会移到「任务池」，由开发工程师在那里领任务。'
     case '开发中心':
       return '开发工程师完成开发后点「发布上线」立即上线（开发工程师或管理员，可批量）。'
     case '已上线':
@@ -270,15 +302,15 @@ async function onEditBranch(row: DevRequest): Promise<void> {
 }
 
 
-/** 需求池可批量「开发」的勾选行 */
+/** 任务池可批量「开发」的勾选行 */
 const developableSelected = computed(() => selectedRows.value.filter((r) => r.status === '需求池'))
 
-/** 批量开发（需求池）：勾选后逐条「开发」（进入开发中心，开发工程师/管理员） */
+/** 批量开发（任务池）：勾选后逐条「开发」（进入开发中心，开发工程师/管理员） */
 const batchDevelopBusy = ref(false)
 async function onBatchDevelop(): Promise<void> {
   const ids = developableSelected.value.map((r) => r.id)
   if (!ids.length) {
-    ElMessage.warning('请先勾选要开发的需求（仅需求池状态）')
+    ElMessage.warning('请先勾选要开发的需求（仅任务池）')
     return
   }
   await ElMessageBox.confirm(
@@ -390,14 +422,27 @@ function onAssigneeChange(): void {
 }
 
 /** 开发中心快捷筛选下的空数据文案：区分「我的任务」与「全部任务」 */
-const emptyText = computed(() =>
-  showBattleScope.value && battleScope.value === 'mine' ? '我的任务暂无数据' : '暂无需求数据',
-)
-const emptySubText = computed(() =>
-  showBattleScope.value && battleScope.value === 'mine'
-    ? '可切换到「全部任务」查看全部开发任务'
-    : '可以调整筛选条件，或先去提交一条需求',
-)
+const emptyText = computed(() => {
+  if (showBattleScope.value && battleScope.value === 'mine') {
+    return '我的任务暂无数据'
+  }
+  if (isTaskPool.value) {
+    return '任务池暂无数据'
+  }
+  return '暂无需求数据'
+})
+const emptySubText = computed(() => {
+  if (showBattleScope.value && battleScope.value === 'mine') {
+    return '可切换到「全部任务」查看全部开发任务'
+  }
+  if (isTaskPool.value) {
+    return '需求在「开发排期」设置预计上线时间后，就会出现在任务池里'
+  }
+  if (isPoolStage.value) {
+    return '评审通过的需求会先进入需求池，排期后移到任务池'
+  }
+  return '可以调整筛选条件，或先去提交一条需求'
+})
 
 /** 筛选区折叠（记忆用户选择，与问题列表一致） */
 const FILTER_COLLAPSE_KEY = 'command_dev_reqs_filter_collapsed'
@@ -430,17 +475,31 @@ const activeFilterCount = computed(() => {
   return n
 })
 
-/** 发布上线记录页默认按上线时间倒序；需求池默认按优先级；其余按提交时间倒序 */
-const sortField = ref<'createdAt' | 'priority' | 'releasedAt'>(
-  props.released ? 'releasedAt' : props.stage === '需求池' ? 'priority' : 'createdAt',
+/**
+ * 默认排序：
+ *   发布上线记录 → 上线时间倒序；任务池 → 预计上线时间正序（先到期先做）；
+ *   需求池 → 优先级；其余 → 提交时间倒序。
+ */
+const sortField = ref<'createdAt' | 'priority' | 'releasedAt' | 'planReleaseDate'>(
+  props.released
+    ? 'releasedAt'
+    : props.scheduled
+      ? 'planReleaseDate'
+      : props.stage === '需求池'
+        ? 'priority'
+        : 'createdAt',
 )
-/** 评审池是待办队列 → 默认正序（先来先审）；其它页默认最新在前 */
-const sortOrder = ref<'ASC' | 'DESC'>(props.stage === '评审池' ? 'ASC' : 'DESC')
+/** 评审池是待办队列 → 默认正序（先来先审）；任务池按预计上线时间正序；其它页默认最新在前 */
+const sortOrder = ref<'ASC' | 'DESC'>(
+  props.stage === '评审池' || props.scheduled ? 'ASC' : 'DESC',
+)
 
 /** 列表查询参数（列表加载与导出共用，保证导出范围与当前筛选一致） */
 function buildQuery(): DevQuery {
   return {
     status: props.stage ?? (filters.status || undefined),
+    // 任务池/需求池按「是否已排期」拆分（同一批需求，两处不重复）
+    planState: isTaskPool.value ? 'scheduled' : isPoolStage.value ? 'unscheduled' : undefined,
     mine: scopeMine.value ? '1' : undefined,
     hidePending: showHidePending.value && hidePending.value ? '1' : undefined,
     keyword: filters.keyword.trim() || undefined,
@@ -545,6 +604,7 @@ const EXPORT_CELL: Record<string, (r: DevRequest) => string | number> = {
   submitterName: (r) => r.submitterName,
   submitterDepartmentName: (r) => r.submitterDepartmentName || '未分配部门',
   createdAt: (r) => fmtDateTime(r.createdAt),
+  planReleaseDate: (r) => (r.planReleaseDate ? fmtDateTime(r.planReleaseDate).slice(0, 10) : '—'),
   releasedAt: (r) => fmtDateTime(r.releasedAt),
 }
 
@@ -561,11 +621,12 @@ const EXPORT_COL_WIDTH: Record<string, number> = {
   submitterName: 10,
   submitterDepartmentName: 16,
   createdAt: 18,
+  planReleaseDate: 18,
   releasedAt: 18,
 }
 
 /**
- * 导出 Excel（需求池）：按当前筛选导出全部记录（不只当前页），
+ * 导出 Excel（需求池 / 任务池）：按当前筛选导出全部记录（不只当前页），
  * 导出列＝列表当前展示的列（顺序、显隐跟随列配置），导出动作写操作日志。
  */
 const poolExporting = ref(false)
@@ -600,10 +661,11 @@ async function onExportPool(): Promise<void> {
     })
     const sheet = XLSX.utils.json_to_sheet(rows)
     sheet['!cols'] = cols.map((c) => ({ wch: EXPORT_COL_WIDTH[c.key] ?? 14 }))
+    const sheetName = isTaskPool.value ? '任务池' : '需求池'
     const book = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(book, sheet, '需求池')
-    XLSX.writeFile(book, `需求池_${fileStamp()}.xlsx`)
-    await exportPoolLog(all.length)
+    XLSX.utils.book_append_sheet(book, sheet, sheetName)
+    XLSX.writeFile(book, `${sheetName}_${fileStamp()}.xlsx`)
+    await exportPoolLog(all.length, isTaskPool.value ? 'task' : 'pool')
     ElMessage.success(`导出完成（共 ${all.length} 条），导出动作已记入操作日志`)
   } catch {
     ElMessage.error('导出失败，请重试')
@@ -702,7 +764,7 @@ async function onPriorityChange(row: DevRequest, priority: string): Promise<void
 
 /** 登记可配置列（顺序即默认顺序；fixed 列不参与配置）。页面切换（键变化）时需重新登记 */
 function registerColumns(): void {
-  colcfg.register([
+  const cols: Array<{ key: string; label: string; fixed?: boolean }> = [
     { key: 'reqNo', label: '需求编号' },
     { key: 'title', label: '需求标题' },
     { key: 'pingcodeTask', label: 'PingCode' },
@@ -714,9 +776,13 @@ function registerColumns(): void {
     { key: 'submitterName', label: '提交人' },
     { key: 'submitterDepartmentName', label: '提交部门' },
     { key: 'createdAt', label: '提交时间' },
+    // 任务池专用列（其它页面在 devColumns 里过滤掉，但需登记才能出现在列配置里）
+    { key: 'planReleaseDate', label: '预计上线时间' },
     { key: 'releasedAt', label: '上线时间' },
     { key: '操作', label: '操作', fixed: true },
-  ])
+  ]
+  // 任务池不展示「提交部门」，列配置里也不列该选项（否则勾了也没反应）
+  colcfg.register(isTaskPool.value ? cols.filter((c) => c.key !== 'submitterDepartmentName') : cols)
 }
 
 onMounted(() => {
@@ -884,17 +950,17 @@ watch(
             :width="36"
             @change="onToggleHidePending"
           />
-          <!-- 需求池：批量开发（开发工程师/管理员，进入开发中心） -->
+          <!-- 任务池：批量开发（开发工程师/管理员，进入开发中心） -->
           <el-button
-            v-if="isPoolStage && canBatchDevelop"
+            v-if="isTaskPool && canBatchDevelop"
             type="primary"
             :disabled="!developableSelected.length"
             :loading="batchDevelopBusy"
             @click="onBatchDevelop"
           >批量开发{{ developableSelected.length ? `（${developableSelected.length}）` : '' }}</el-button>
-          <!-- 需求池：导出 Excel（按当前筛选导出全部，列跟随当前展示） -->
+          <!-- 需求池 / 任务池：导出 Excel（按当前筛选导出全部，列跟随当前展示） -->
           <el-button
-            v-if="isPoolStage"
+            v-if="isPoolStage || isTaskPool"
             type="default"
             :loading="poolExporting"
             @click="onExportPool"
@@ -937,7 +1003,7 @@ watch(
           @sort-change="onSortChange"
           @selection-change="onSelectionChange"
         >
-          <el-table-column v-if="isPoolStage || isBattleStage" type="selection" width="40" :selectable="isSelectable" />
+          <el-table-column v-if="isTaskPool || isBattleStage" type="selection" width="40" :selectable="isSelectable" />
 
           <template #empty>
             <EmptyIllustration :size="130" :text="emptyText" :sub-text="emptySubText" />
@@ -1075,6 +1141,12 @@ watch(
                 <span class="cell-nowrap">{{ fmtDateTime(row.createdAt) }}</span>
               </template>
 
+              <!-- 任务池：预计上线时间（开发排期里设置的日期） -->
+              <template v-else-if="c.key === 'planReleaseDate'">
+                <span v-if="row.planReleaseDate" class="cell-nowrap">{{ fmtDateTime(row.planReleaseDate).slice(0, 10) }}</span>
+                <span v-else class="text-placeholder">未排期</span>
+              </template>
+
               <!-- 发布上线记录页：上线时间（含操作人悬停提示） -->
               <template v-else-if="c.key === 'releasedAt'">
                 <el-tooltip
@@ -1096,7 +1168,7 @@ watch(
           <el-table-column
             v-if="!isReleasedStage"
             label="操作"
-            :width="colw.bind('操作', { width: 220 }).width"
+            :width="colw.bind('操作', { width: isTaskPool ? 160 : 220 }).width"
             fixed="right"
             align="center"
           >
