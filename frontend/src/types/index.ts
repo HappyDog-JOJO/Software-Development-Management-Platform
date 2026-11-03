@@ -571,6 +571,8 @@ export interface DevQuery {
   releasedEnd?: string
   /** 负责人筛选（PingCode 成员 id） */
   assigneeId?: string
+  /** 只看负责人是我（开发中心快捷筛选：按当前登录用户姓名匹配） */
+  assigneeSelf?: '1'
   page?: number
   pageSize?: number
   sortField?: 'createdAt' | 'priority' | 'releasedAt'

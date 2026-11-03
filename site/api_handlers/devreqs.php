@@ -178,6 +178,22 @@ function qly_devreq_filters(): array
         $where .= ' AND i.assignee_id = :asg';
         $params[':asg'] = $assigneeId;
     }
+    // 开发中心「我的任务」：按负责人姓名匹配当前登录用户。
+    // 负责人落库的是 PingCode 成员姓名（assignee_name），系统用户与该成员表没有绑定字段，
+    // 所以这里用姓名比对；姓名为空时退回账号，避免空条件把结果放大成全量。
+    if ((string) qly_input('assigneeSelf', '') === '1') {
+        $self = qly_current_user();
+        $selfName = trim((string) ($self['name'] ?? ''));
+        if ($selfName === '') {
+            $selfName = trim((string) ($self['account'] ?? ''));
+        }
+        if ($selfName === '') {
+            $where .= ' AND 1=0';
+        } else {
+            $where .= ' AND i.assignee_name = :selfname';
+            $params[':selfname'] = $selfName;
+        }
+    }
     return [$where, $params];
 }
 
@@ -850,9 +866,12 @@ function qly_api_devreqs_develop(): void
     }
     $name = $user['name'] !== '' ? (string) $user['name'] : (string) $user['account'];
     $now = date('Y-m-d H:i:s');
+    // 认领即成为负责人：把当前用户姓名写进 assignee_name，让「我的任务」立即能看到。
+    // assignee_id 是 PingCode 成员 id，认领这一刻拿不到，留空等同步时补。
     qly_update('dev_request', $id, [
         'status' => '开发中心',
         'battle_at' => $now,
+        'assignee_name' => $name,
         'updated_at' => $now,
     ]);
     qly_log($user, '需求开发', (string) $row['req_no'], '开发工程师认领开发，进入开发中心：' . $row['title']);

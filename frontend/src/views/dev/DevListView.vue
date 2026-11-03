@@ -301,6 +301,47 @@ function onSyncDone(): void {
   void load()
 }
 
+/**
+ * 开发中心快捷筛选：我的任务 / 全部任务。
+ * 默认「我的任务」（负责人 = 当前登录用户）；选择会记忆，下次进来沿用。
+ * 同一页还有「负责人」下拉（PingCode 成员），两者互斥：
+ * 选「我的任务」时以当前登录用户为准，手选具体负责人时自动切到「全部任务」。
+ */
+const BATTLE_SCOPE_KEY = 'command_dev_battle_scope'
+const battleScope = ref<'mine' | 'all'>(
+  localStorage.getItem(BATTLE_SCOPE_KEY) === 'all' ? 'all' : 'mine',
+)
+/** 仅开发中心页展示该快捷筛选 */
+const showBattleScope = computed(() => isBattleStage.value)
+function onBattleScopeChange(): void {
+  localStorage.setItem(BATTLE_SCOPE_KEY, battleScope.value)
+  // 切到「我的任务」时清掉手选的负责人，避免两个条件叠加出空结果
+  if (battleScope.value === 'mine') {
+    filters.assigneeId = ''
+  }
+  page.value = 1
+  void load()
+}
+/** 手选负责人时自动切回「全部任务」（否则两个条件会互相抵消） */
+function onAssigneeChange(): void {
+  if (filters.assigneeId && battleScope.value === 'mine') {
+    battleScope.value = 'all'
+    localStorage.setItem(BATTLE_SCOPE_KEY, 'all')
+  }
+  page.value = 1
+  void load()
+}
+
+/** 开发中心快捷筛选下的空数据文案：区分「我的任务」与「全部任务」 */
+const emptyText = computed(() =>
+  showBattleScope.value && battleScope.value === 'mine' ? '我的任务暂无数据' : '暂无需求数据',
+)
+const emptySubText = computed(() =>
+  showBattleScope.value && battleScope.value === 'mine'
+    ? '可切换到「全部任务」查看全部开发任务'
+    : '可以调整筛选条件，或先去提交一条需求',
+)
+
 /** 筛选区折叠（记忆用户选择，与问题列表一致） */
 const FILTER_COLLAPSE_KEY = 'command_dev_reqs_filter_collapsed'
 const filterCollapsed = ref(localStorage.getItem(FILTER_COLLAPSE_KEY) === '1')
@@ -349,6 +390,7 @@ function buildQuery(): DevQuery {
     priority: filters.priority || undefined,
     moduleId: filters.moduleId,
     assigneeId: showAssignee.value ? filters.assigneeId || undefined : undefined,
+    assigneeSelf: showBattleScope.value && battleScope.value === 'mine' ? '1' : undefined,
     releasedStart: isReleasedStage.value ? filters.releasedStart || undefined : undefined,
     releasedEnd: isReleasedStage.value ? filters.releasedEnd || undefined : undefined,
     sortField: sortField.value,
@@ -442,6 +484,11 @@ function onReset(): void {
   filters.assigneeId = ''
   filters.releasedStart = ''
   filters.releasedEnd = ''
+  // 开发中心回到默认的「我的任务」
+  if (showBattleScope.value) {
+    battleScope.value = 'mine'
+    localStorage.setItem(BATTLE_SCOPE_KEY, 'mine')
+  }
   page.value = 1
   void load()
 }
@@ -590,7 +637,7 @@ watch(
             clearable
             filterable
             style="width: 150px"
-            @change="load"
+            @change="onAssigneeChange"
             @visible-change="(v: boolean) => v && loadAssigneeOptions()"
           >
             <el-option v-for="m in assigneeOptions" :key="m.id" :label="m.name" :value="m.id" />
@@ -649,6 +696,16 @@ watch(
     <div class="moon-card moon-card--tight">
       <div class="toolbar toolbar--actions-only">
         <div class="toolbar__actions">
+          <!-- 开发中心快捷筛选：我的任务（默认）/ 全部任务；负责人按当前登录用户姓名匹配 -->
+          <el-radio-group
+            v-if="showBattleScope"
+            v-model="battleScope"
+            size="small"
+            @change="onBattleScopeChange"
+          >
+            <el-radio-button value="mine">我的任务</el-radio-button>
+            <el-radio-button value="all">全部任务</el-radio-button>
+          </el-radio-group>
           <!-- 我的需求（管理员）：查看全部 / 只看我的（默认查看全部，记忆选择） -->
           <el-radio-group
             v-if="showScopeSwitch"
@@ -716,7 +773,7 @@ watch(
           <el-table-column v-if="isPoolStage || isBattleStage" type="selection" width="40" :selectable="isSelectable" />
 
           <template #empty>
-            <EmptyIllustration :size="130" text="暂无需求数据" sub-text="可以调整筛选条件，或先去提交一条需求" />
+            <EmptyIllustration :size="130" :text="emptyText" :sub-text="emptySubText" />
           </template>
 
           <!-- 列按「列配置」的顺序与显隐动态渲染，因此调整顺序能真正作用到表格。

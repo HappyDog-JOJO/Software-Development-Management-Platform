@@ -187,7 +187,9 @@ const routes: RouteRecordRaw[] = [
         path: 'profile',
         name: 'Profile',
         component: () => import('@/views/profile/ProfileView.vue'),
-        meta: { title: '个人中心', roles: [ROLE_SALES, ROLE_SERVICE, ROLE_MANAGER, ROLE_ADMIN], hidden: true },
+        // 个人中心属于每个登录用户的基础能力：不声明 roles，守卫只校验登录态，
+        // 否则新增角色（评审委员/产品经理/开发工程师等）会被拦到 403。
+        meta: { title: '个人中心', hidden: true },
       },
       {
         path: '403',
