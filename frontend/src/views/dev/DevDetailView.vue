@@ -309,7 +309,7 @@ watch(reqId, load)
             <div class="meta-list">
               <div class="meta-row">
                 <span class="meta-row__label">提交人</span>
-                <span class="meta-row__value">{{ detail.submitterName }}<span v-if="detail.submitterAccount && detail.submitterAccount !== detail.submitterName" class="meta-row__sub">{{ detail.submitterAccount }}</span></span>
+                <span class="meta-row__value">{{ detail.submitterName }}<template v-if="detail.submitterPhone">（{{ detail.submitterPhone }}）</template><span v-if="detail.submitterAccount && detail.submitterAccount !== detail.submitterName" class="meta-row__sub">{{ detail.submitterAccount }}</span></span>
               </div>
               <div class="meta-row">
                 <span class="meta-row__label">提交部门</span>
