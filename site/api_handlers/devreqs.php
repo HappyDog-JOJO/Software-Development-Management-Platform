@@ -95,6 +95,10 @@ function qly_devreq_row_public(array $r): array
         'devDoneAt' => $r['dev_done_at'] ?? null,
         'releasedAt' => $r['released_at'],
         'releasedBy' => $r['released_by'],
+        // 开发排期：预计上线日期（NULL=未排期）
+        'planReleaseDate' => $r['plan_release_date'] ?? null,
+        'planReleaseBy' => $r['plan_release_by'] ?? null,
+        'planReleaseAt' => $r['plan_release_at'] ?? null,
         'pingcodeTaskId' => $r['pingcode_task_id'] ?? null,
         'pingcodeTaskNo' => $r['pingcode_task_no'] ?? null,
         'pingcodeTaskUrl' => $r['pingcode_task_url'] ?? null,
@@ -135,6 +139,10 @@ function qly_devreq_filters(): array
         }
         $where .= ' AND i.status = :st';
         $params[':st'] = $status;
+    }
+    // 需求池：已加入「开发排期」的需求不再在此列出（避免同一批需求两处重复，排期页统一管理）
+    if ($status === '需求池') {
+        $where .= ' AND i.plan_release_date IS NULL';
     }
     $priority = (string) qly_input('priority', '');
     if ($priority !== '') {
@@ -854,6 +862,187 @@ function qly_api_devreqs_priority(): void
     ]);
     qly_log($user, '需求评审', (string) $row['req_no'], '调整优先级：' . $row['title'] . '（' . (string) $row['priority'] . ' → ' . $priority . '）');
     qly_ok(['priority' => $priority], '优先级已调整');
+}
+
+/* ==================== 开发排期 ==================== */
+
+/** 能否编排开发排期：产品经理 / 管理员（排期属于计划工作，评审委员只负责评审） */
+function qly_can_schedule_req(array $user): bool
+{
+    return qly_has_role($user, [QLY_ROLE_PM, QLY_ROLE_ADMIN]);
+}
+
+/** 可参与排期的需求：已评审通过（需求池 / 开发中心）、尚未上线，且还没有排期 */
+function qly_devreq_schedulable_where(string $alias = 'i'): string
+{
+    return " AND {$alias}.status IN ('需求池', '开发中心') AND {$alias}.plan_release_date IS NULL";
+}
+
+/**
+ * 开发排期 · 候选需求（「添加排期」弹窗用）。
+ * 只给：已评审通过（需求池 / 开发中心）、尚未上线、且还没有排期的需求。
+ * 排序与需求池一致：紧急 > 高 > 中 > 低，同级按提交先后（先来先排）。
+ */
+function qly_api_devreqs_schedule_candidates(): void
+{
+    $user = qly_auth_user();
+    if (!qly_can_schedule_req($user)) {
+        qly_forbidden('仅产品经理或管理员可编排开发排期');
+    }
+    [$filterWhere, $filterParams] = qly_devreq_filters();
+    [$scopeWhere, $scopeParams] = qly_devreq_scope_where($user, 'i');
+    $page = max(1, qly_input_int('page', 1));
+    $pageSize = min(200, max(1, qly_input_int('pageSize', 20)));
+    $offset = ($page - 1) * $pageSize;
+    $base = qly_devreq_base_from() . ' WHERE 1=1' . $filterWhere . qly_devreq_schedulable_where('i');
+    $params = array_merge($filterParams, $scopeParams);
+    $total = (int) qly_val('SELECT COUNT(*)' . $base . $scopeWhere, $params);
+    $rows = qly_all(
+        qly_devreq_base_select() . $base . $scopeWhere
+        . " ORDER BY FIELD(i.priority, '紧急', '高', '中', '低') ASC, i.created_at ASC, i.id ASC"
+        . ' LIMIT ' . $pageSize . ' OFFSET ' . $offset,
+        $params
+    );
+    qly_ok([
+        'items' => array_map('qly_devreq_row_public', $rows),
+        'total' => $total,
+        'page' => $page,
+        'pageSize' => $pageSize,
+    ]);
+}
+
+/**
+ * 开发排期 · 排期列表（已排期且未上线；上线后自动移出）。
+ * 排序：预计上线日期近的在前（同一天按优先级），sortOrder=DESC 可反向。
+ * 另附概览：已排期总数 / 本周内（含今天 7 天）/ 已逾期。
+ */
+function qly_api_devreqs_schedule(): void
+{
+    $user = qly_auth_user();
+    if (!qly_can_schedule_req($user)) {
+        qly_forbidden('仅产品经理或管理员可查看开发排期');
+    }
+    [$filterWhere, $filterParams] = qly_devreq_filters();
+    [$scopeWhere, $scopeParams] = qly_devreq_scope_where($user, 'i');
+    $page = max(1, qly_input_int('page', 1));
+    $pageSize = min(200, max(1, qly_input_int('pageSize', 20)));
+    $offset = ($page - 1) * $pageSize;
+    // 已上线的需求不再出现在排期里（上线后由「发布上线」页承接）
+    $scheduled = " AND i.plan_release_date IS NOT NULL AND i.status IN ('需求池', '开发中心')";
+    $base = qly_devreq_base_from() . ' WHERE 1=1' . $filterWhere . $scheduled;
+    $params = array_merge($filterParams, $scopeParams);
+    $total = (int) qly_val('SELECT COUNT(*)' . $base . $scopeWhere, $params);
+    $dir = strtoupper((string) qly_input('sortOrder', 'ASC')) === 'DESC' ? 'DESC' : 'ASC';
+    $rows = qly_all(
+        qly_devreq_base_select() . $base . $scopeWhere
+        . ' ORDER BY i.plan_release_date ' . $dir . ", FIELD(i.priority, '紧急', '高', '中', '低') ASC, i.id ASC"
+        . ' LIMIT ' . $pageSize . ' OFFSET ' . $offset,
+        $params
+    );
+    $sum = qly_one(
+        'SELECT COUNT(*) AS total,'
+        . ' SUM(CASE WHEN i.plan_release_date < CURDATE() THEN 1 ELSE 0 END) AS overdue,'
+        . ' SUM(CASE WHEN i.plan_release_date >= CURDATE() AND i.plan_release_date <= DATE_ADD(CURDATE(), INTERVAL 6 DAY) THEN 1 ELSE 0 END) AS thisWeek'
+        . $base . $scopeWhere,
+        $params
+    );
+    qly_ok([
+        'items' => array_map('qly_devreq_row_public', $rows),
+        'total' => $total,
+        'page' => $page,
+        'pageSize' => $pageSize,
+        'summary' => [
+            'total' => (int) ($sum['total'] ?? 0),
+            'overdue' => (int) ($sum['overdue'] ?? 0),
+            'thisWeek' => (int) ($sum['thisWeek'] ?? 0),
+        ],
+    ]);
+}
+
+/**
+ * 开发排期 · 设置 / 修改 / 取消预计上线时间。
+ * 参数：id 或 ids[]（批量，供「添加排期」一次选多条）；planReleaseDate（YYYY-MM-DD，空=取消排期）。
+ * 只有评审通过（需求池 / 开发中心）的需求能排期：已上线、评审池、已驳回、已取消一律拒绝；
+ * 已排期的需求再次设置视为修改（列表里直接改日期），不会产生重复排期。
+ */
+function qly_api_devreqs_schedule_set(): void
+{
+    $user = qly_auth_user();
+    if (!qly_can_schedule_req($user)) {
+        qly_forbidden('仅产品经理或管理员可编排开发排期');
+    }
+    $date = trim((string) qly_input('planReleaseDate', ''));
+    if ($date !== '') {
+        if (!preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/', $date)) {
+            qly_fail('预计上线时间格式应为 YYYY-MM-DD');
+        }
+        [$y, $m, $d] = array_map('intval', explode('-', $date));
+        if (!checkdate($m, $d, $y)) {
+            qly_fail('预计上线时间不是有效日期');
+        }
+        if ($date < date('Y-m-d')) {
+            qly_fail('预计上线时间不能早于今天');
+        }
+    }
+    $ids = qly_input('ids', null);
+    if (!is_array($ids)) {
+        $ids = [qly_input_int('id', 0)];
+    }
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn(int $v): bool => $v > 0)));
+    if (!$ids) {
+        qly_fail('请先选择需求');
+    }
+    if (count($ids) > 200) {
+        qly_fail('一次最多处理 200 条需求');
+    }
+    // 先整批校验：任何一条不合法就整体拒绝，避免改一半
+    $rows = [];
+    foreach ($ids as $id) {
+        $row = qly_one('SELECT * FROM `dev_request` WHERE id = :id', [':id' => $id]);
+        if (!$row) {
+            qly_fail('需求不存在（ID ' . $id . '）');
+        }
+        $status = (string) $row['status'];
+        if (!in_array($status, ['需求池', '开发中心'], true)) {
+            $reason = $status === '已上线' ? '已上线的需求不能排期' : '只有评审通过的需求才能排期';
+            qly_fail($reason . '：' . (string) $row['req_no']);
+        }
+        $rows[] = $row;
+    }
+    $name = ($user['name'] !== null && $user['name'] !== '') ? (string) $user['name'] : (string) $user['account'];
+    $now = date('Y-m-d H:i:s');
+    $changed = 0;
+    foreach ($rows as $row) {
+        $id = (int) $row['id'];
+        $before = (string) ($row['plan_release_date'] ?? '');
+        if ($before === $date) {
+            continue;
+        }
+        qly_update('dev_request', $id, [
+            'plan_release_date' => $date !== '' ? $date : null,
+            'plan_release_by' => $date !== '' ? $name : null,
+            'plan_release_at' => $date !== '' ? $now : null,
+            'updated_at' => $now,
+        ]);
+        qly_devreq_save_change($user, $id, [[
+            'field' => 'plan_release_date',
+            'label' => '预计上线时间',
+            'before' => $before,
+            'after' => $date,
+        ]]);
+        qly_log(
+            $user,
+            '开发排期',
+            (string) $row['req_no'],
+            ($date !== '' ? '设置预计上线时间：' : '取消排期：') . $row['title']
+                . '（' . ($before !== '' ? $before : '未排期') . ' → ' . ($date !== '' ? $date : '未排期') . '）'
+        );
+        $changed++;
+    }
+    if ($changed === 0) {
+        qly_ok(['updated' => 0], '预计上线时间未变化');
+    }
+    qly_ok(['updated' => $changed], $date !== '' ? '预计上线时间已保存' : '已取消排期');
 }
 
 /** 开发（认领开发）：需求池 → 开发中心（开发工程师 / 管理员点击「开发」直接进入开发中心） */

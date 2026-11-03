@@ -229,6 +229,8 @@ const menuIconMap: Record<string, string> = {
   design: 'M4 4h16v12H4V4Zm2 2v8h12V6H6Zm2 10v2H6v2h12v-2h-2v-2H8Z',
   battle: 'M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4Zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4Z',
   release: 'M2 21 23 12 2 3v7l15 2-15 2v7Z',
+  // 开发排期：表盘 + 指针
+  schedule: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 5h-2v6l5 3 1-1.7-4-2.3V7Z',
   headset: 'M12 3a8 8 0 0 0-8 8v5a3 3 0 0 0 3 3h1a1 1 0 0 0 1-1v-6a1 1 0 0 0-1-1H6v-1a6 6 0 0 1 12 0v1h-2a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h1a3 3 0 0 0 3-3v-5a8 8 0 0 0-8-8Z',
   kanban: 'M3 4h5v16H3V4Zm6.5 0h5v10h-5V4ZM16 4h5v13h-5V4Z',
   // 销售分析：柱状图 + 趋势线，与「报表统计」的 chart 图标区分

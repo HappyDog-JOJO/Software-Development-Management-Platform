@@ -124,6 +124,10 @@ $routes = [
     'devreqs/delete' => [['POST'], 'devreqs.php', 'qly_api_devreqs_delete'],
     'devreqs/review' => [['POST'], 'devreqs.php', 'qly_api_devreqs_review'],
     'devreqs/priority' => [['POST'], 'devreqs.php', 'qly_api_devreqs_priority'],
+    // 开发排期：已评审通过且未上线的需求排「预计上线时间」
+    'devreqs/schedule' => [['GET'], 'devreqs.php', 'qly_api_devreqs_schedule'],
+    'devreqs/schedule-candidates' => [['GET'], 'devreqs.php', 'qly_api_devreqs_schedule_candidates'],
+    'devreqs/schedule-set' => [['POST'], 'devreqs.php', 'qly_api_devreqs_schedule_set'],
     'devreqs/develop' => [['POST'], 'devreqs.php', 'qly_api_devreqs_develop'],
     'devreqs/battle-publish' => [['POST'], 'devreqs.php', 'qly_api_devreqs_battle_publish'],
     'devreqs/withdraw' => [['POST'], 'devreqs.php', 'qly_api_devreqs_withdraw'],

@@ -353,6 +353,9 @@ CREATE TABLE IF NOT EXISTS `dev_request` (
   `reject_count` INT NOT NULL DEFAULT 0 COMMENT '废弃（质量中心已下线，仅保留历史数据）',
   `released_at` DATETIME DEFAULT NULL COMMENT '发布上线时间',
   `released_by` VARCHAR(60) DEFAULT NULL COMMENT '发布操作人',
+  `plan_release_date` DATE DEFAULT NULL COMMENT '预计上线日期（开发排期；NULL=未排期）',
+  `plan_release_by` VARCHAR(60) DEFAULT NULL COMMENT '排期设置人（姓名快照）',
+  `plan_release_at` DATETIME DEFAULT NULL COMMENT '排期设置时间',
   `pingcode_task_id` VARCHAR(64) DEFAULT NULL COMMENT 'PingCode 任务ID（同步后）',
   `pingcode_task_no` VARCHAR(64) DEFAULT NULL COMMENT 'PingCode 任务编号（如 KG-123）',
   `pingcode_task_url` VARCHAR(500) DEFAULT NULL COMMENT 'PingCode 任务链接',
@@ -369,7 +372,8 @@ CREATE TABLE IF NOT EXISTS `dev_request` (
   KEY `idx_devreq_status` (`status`),
   KEY `idx_devreq_submitter` (`submitter_id`),
   KEY `idx_devreq_pm` (`pm_id`),
-  KEY `idx_devreq_leader` (`dev_leader_id`)
+  KEY `idx_devreq_leader` (`dev_leader_id`),
+  KEY `idx_devreq_plan` (`plan_release_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='需求主任务';
 SQL;
 

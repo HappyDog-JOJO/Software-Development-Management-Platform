@@ -498,6 +498,12 @@ export interface DevRequest {
   devDoneAt: string | null
   releasedAt: string | null
   releasedBy: string | null
+  /** 预计上线时间（开发排期；null = 未排期） */
+  planReleaseDate: string | null
+  /** 排期设置人（姓名快照） */
+  planReleaseBy: string | null
+  /** 排期设置时间 */
+  planReleaseAt: string | null
   /** PingCode 同步状态（同步后记录） */
   pingcodeTaskId: string | null
   pingcodeTaskNo: string | null
@@ -581,6 +587,17 @@ export interface DevQuery {
   pageSize?: number
   sortField?: 'createdAt' | 'priority' | 'releasedAt'
   sortOrder?: 'ASC' | 'DESC'
+}
+
+/** 开发排期概览（已排期 / 本周内 / 已逾期） */
+export interface DevScheduleSummary {
+  total: number
+  thisWeek: number
+  overdue: number
+}
+
+export interface DevScheduleResult extends PageResult<DevRequest> {
+  summary: DevScheduleSummary
 }
 
 /* ==================== 销售分析（输单）==================== */

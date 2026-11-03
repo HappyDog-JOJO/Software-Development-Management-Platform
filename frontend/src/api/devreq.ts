@@ -5,6 +5,7 @@ import type {
   DevQuery,
   DevRequest,
   DevRequestDetail,
+  DevScheduleResult,
   PageResult,
   UploadResult,
 } from '@/types'
@@ -95,6 +96,26 @@ export function fetchDevRequestNeighbors(
 /** 添加流转备注（能看该需求的人都可以留言，纯沟通留痕） */
 export function addDevRequestComment(id: number, content: string): Promise<{ id: number }> {
   return http.post<{ id: number }>('/api.php?r=devreqs/comment', { id, content })
+}
+
+/* ==================== 开发排期 ==================== */
+
+/** 候选需求（「添加排期」弹窗）：评审通过且尚未上线、且还没排期的需求 */
+export function fetchScheduleCandidates(params: DevQuery = {}): Promise<PageResult<DevRequest>> {
+  return http.get<PageResult<DevRequest>>('/api.php?r=devreqs/schedule-candidates', params)
+}
+
+/** 排期列表（已排期且未上线）：附概览 summary（已排期 / 本周内 / 已逾期） */
+export function fetchSchedule(params: DevQuery = {}): Promise<DevScheduleResult> {
+  return http.get<DevScheduleResult>('/api.php?r=devreqs/schedule', params)
+}
+
+/** 设置 / 修改 / 取消预计上线时间（传空字符串=取消排期；支持批量传 ids） */
+export function setScheduleDate(
+  ids: number[],
+  planReleaseDate: string,
+): Promise<{ updated: number }> {
+  return http.post<{ updated: number }>('/api.php?r=devreqs/schedule-set', { ids, planReleaseDate })
 }
 
 /** 撤回需求（仅管理员）：把处理进度退回上一步（需求池→评审池 / 开发中心→需求池 / 已上线→开发中心） */
